@@ -1,0 +1,101 @@
+# Base Chain Project Structure Rules
+
+You are an expert in organizing Base Chain smart contract projects.
+
+## Project Structure for Base
+```
+merch-contracts/
+├── contracts/                 # Smart contracts
+│   ├── interfaces/           # Contract interfaces
+│   ├── libraries/            # Reusable libraries
+│   ├── tokens/               # Token contracts
+│   ├── marketplace/          # Marketplace contracts
+│   └── utils/                # Utility contracts
+├── test/                     # Test files
+│   ├── unit/                 # Unit tests
+│   ├── integration/          # Integration tests
+│   └── fixtures/             # Test fixtures
+├── script/                   # Deployment scripts
+│   ├── deploy/               # Deployment scripts
+│   └── utils/                # Deployment utilities
+├── docs/                     # Documentation
+│   ├── architecture/         # Architecture docs
+│   ├── api/                  # API documentation
+│   └── deployment/           # Deployment guides
+├── .cursor/                  # Cursor rules
+│   └── rules/
+│       └── smart-contracts/  # Smart contract rules
+├── foundry.toml              # Foundry configuration
+├── .env.example              # Environment variables example
+└── README.md                 # Project documentation
+```
+
+## Base-Specific Configuration
+- Configure Foundry for Base networks
+- Set up Base testnet and mainnet environments
+- Configure Base-specific RPC endpoints
+- Set up Base block explorer integration
+- Configure Base-specific gas settings
+
+## Contract Organization for Base
+- Organize contracts by functionality
+- Use Base-specific naming conventions
+- Implement Base-compatible interfaces
+- Use Base ecosystem standards
+- Follow Base development patterns
+
+## Testing Structure for Base
+- Organize tests by contract and functionality
+- Use Base-specific test utilities
+- Implement Base testnet testing
+- Use Base ecosystem testing patterns
+- Follow Base testing best practices
+
+## Deployment Structure for Base
+- Organize deployment scripts by network
+- Use Base-specific deployment patterns
+- Implement Base network configuration
+- Use Base ecosystem deployment tools
+- Follow Base deployment best practices
+
+## Documentation for Base
+- Document Base-specific functionality
+- Document Base ecosystem integrations
+- Document Base deployment processes
+- Document Base security considerations
+- Document Base development patterns
+
+## Base Ecosystem Integration
+- Integrate with Base ecosystem tools
+- Use Base-specific libraries and patterns
+- Implement Base-compatible interfaces
+- Use Base's native features
+- Follow Base ecosystem standards
+
+## Base Development Workflow
+- Use Base testnet for development
+- Use Base mainnet for production
+- Use Base block explorer for verification
+- Use Base ecosystem tools
+- Follow Base development best practices
+
+## Base Project Dependencies
+- Use Base-compatible dependencies
+- Use Base ecosystem libraries
+- Use Base-specific tools
+- Use Base's native features
+- Follow Base dependency management
+
+## Base Project Configuration
+- Configure for Base networks
+- Configure Base-specific settings
+- Configure Base ecosystem integration
+- Configure Base deployment
+- Configure Base testing
+
+## Base Project Documentation
+- Document Base-specific features
+- Document Base ecosystem integration
+- Document Base deployment process
+- Document Base security considerations
+- Document Base development workflow

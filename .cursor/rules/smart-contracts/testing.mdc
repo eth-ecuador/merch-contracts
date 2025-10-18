@@ -1,0 +1,80 @@
+# Base Chain Testing Rules
+
+You are an expert in testing smart contracts on Base Chain.
+
+## Testing Strategy for Base
+- Test on Base Sepolia testnet before mainnet deployment
+- Use Base-specific test utilities and patterns
+- Implement comprehensive test coverage for Base features
+- Test Base-specific functionality like native ETH handling
+- Use Base testnet faucets for development
+
+## Test Environment Setup
+- Configure Foundry for Base testing
+- Set up Base Sepolia testnet environment
+- Use Base-specific test utilities
+- Configure proper gas settings for Base
+- Use Base testnet faucets for test ETH
+
+## Base-Specific Testing
+- Test native ETH handling on Base
+- Test Base's fast transaction finality
+- Test Base-specific gas optimizations
+- Test Base ecosystem integrations
+- Test Base's indexing capabilities
+
+## Test Coverage Requirements
+- Achieve high test coverage for Base contracts
+- Test all Base-specific functionality
+- Test Base network conditions
+- Test Base-specific error handling
+- Test Base ecosystem integrations
+
+## Testing Tools for Base
+- Use Foundry for Base testing
+- Use Base-specific test utilities
+- Use Base block explorer for test verification
+- Use Base testnet faucets
+- Use Base-specific testing patterns
+
+## Base Testnet Testing
+- Deploy to Base Sepolia for testing
+- Test all functionality on Base testnet
+- Use Base Sepolia faucet for test ETH
+- Verify contracts on Base Sepolia block explorer
+- Test Base-specific features on testnet
+
+## Gas Testing on Base
+- Test gas consumption on Base
+- Optimize for Base's low-cost environment
+- Test Base-specific gas optimizations
+- Use Base's native features for gas savings
+- Test gas limits on Base
+
+## Security Testing for Base
+- Test Base-specific security patterns
+- Test Base's native security features
+- Test for Base-specific vulnerabilities
+- Test Base ecosystem integrations
+- Test Base's access control mechanisms
+
+## Integration Testing on Base
+- Test Base ecosystem integrations
+- Test Base-specific libraries
+- Test Base-compatible interfaces
+- Test Base's native features
+- Test Base ecosystem standards
+
+## Performance Testing on Base
+- Test Base's fast transaction finality
+- Test Base's low-cost environment
+- Test Base-specific optimizations
+- Test Base's indexing capabilities
+- Test Base's native features
+
+## Base Testnet Faucets
+- Use Base Sepolia faucet for test ETH
+- Implement proper test ETH management
+- Use Base testnet for development
+- Test Base-specific functionality
+- Use Base testnet for integration testing

@@ -1,0 +1,88 @@
+# Base Chain Merchandise Contract Rules
+
+You are an expert in developing merchandise smart contracts for Base Chain.
+
+## Merchandise Contract Architecture
+- Design for Base's low-cost environment
+- Implement efficient storage patterns for merchandise data
+- Use Base's fast transaction finality for better UX
+- Leverage Base's native ETH for payments
+- Optimize for Base's gas-efficient environment
+
+## Merchandise Data Structure
+```solidity
+struct Merchandise {
+    uint256 id;
+    string name;
+    string description;
+    uint256 price;
+    uint256 stock;
+    string imageUri;
+    bool active;
+    address creator;
+    uint256 createdAt;
+}
+```
+
+## Merchandise Contract Features
+- **Inventory Management**: Track merchandise stock and availability
+- **Pricing**: Dynamic pricing with Base's low-cost environment
+- **Metadata**: Store merchandise information on-chain
+- **Ownership**: Track merchandise ownership and transfers
+- **Events**: Emit events for merchandise operations
+
+## Base-Specific Merchandise Features
+- Use Base's native ETH for payments
+- Leverage Base's fast transaction finality
+- Implement Base-specific gas optimizations
+- Use Base's indexing capabilities for merchandise data
+- Integrate with Base ecosystem tools
+
+## Merchandise Contract Security
+- Implement proper access controls for merchandise operations
+- Use Base-specific security patterns
+- Implement reentrancy protection for merchandise transactions
+- Use Base's native security features
+- Test for Base-specific vulnerabilities
+
+## Merchandise Contract Testing
+- Test merchandise operations on Base testnet
+- Test Base-specific merchandise features
+- Test merchandise security on Base
+- Test Base ecosystem merchandise integrations
+- Use Base testnet for merchandise development
+
+## Merchandise Contract Deployment
+- Deploy merchandise contracts to Base testnet first
+- Use Base-specific deployment patterns
+- Verify merchandise contracts on Base block explorer
+- Use Base ecosystem deployment tools
+- Follow Base deployment best practices
+
+## Merchandise Contract Integration
+- Integrate with Base ecosystem tools
+- Use Base-specific merchandise libraries
+- Implement Base-compatible merchandise interfaces
+- Use Base's native merchandise features
+- Follow Base ecosystem merchandise standards
+
+## Merchandise Contract Optimization
+- Optimize for Base's low-cost environment
+- Use Base-specific gas optimization techniques
+- Implement efficient merchandise storage patterns
+- Use Base's native features for gas savings
+- Optimize for Base's transaction finality
+
+## Merchandise Contract Monitoring
+- Monitor merchandise contracts on Base block explorer
+- Use Base-specific monitoring tools
+- Implement proper merchandise logging for Base
+- Use Base's indexing capabilities for merchandise data
+- Monitor Base-specific merchandise metrics
+
+## Merchandise Contract Documentation
+- Document Base-specific merchandise features
+- Document Base ecosystem merchandise integrations
+- Document Base merchandise deployment process
+- Document Base merchandise security considerations
+- Document Base merchandise development patterns

@@ -1,0 +1,87 @@
+# Base Chain Security Rules
+
+You are an expert in Base Chain smart contract security.
+
+## Base-Specific Security Considerations
+- Base is an Ethereum L2 using Optimism's OP Stack
+- Inherits Ethereum's security model with additional L2 considerations
+- Use Base-specific security patterns and best practices
+- Implement proper access controls for Base deployment
+- Test for Base-specific vulnerabilities
+
+## Access Control for Base
+- Use OpenZeppelin's AccessControl for Base contracts
+- Implement proper role-based access control
+- Use Base-specific access control patterns
+- Implement proper upgrade mechanisms for Base
+- Use Base's native security features
+
+## Reentrancy Protection for Base
+- Use OpenZeppelin's ReentrancyGuard for Base contracts
+- Implement proper reentrancy protection
+- Use Base-specific reentrancy patterns
+- Test for Base-specific reentrancy vulnerabilities
+- Use Base's native security features
+
+## Base Network Security
+- Test for Base-specific network conditions
+- Implement proper error handling for Base
+- Use Base's native security features
+- Test Base ecosystem integrations
+- Use Base-specific security patterns
+
+## Gas Optimization Security for Base
+- Base has significantly lower gas costs
+- Optimize for Base's environment while maintaining security
+- Use Base-specific gas optimization techniques
+- Implement efficient security patterns for Base
+- Use Base's native features for security
+
+## Base Ecosystem Security
+- Integrate securely with Base ecosystem
+- Use Base-specific security libraries
+- Implement Base-compatible security interfaces
+- Use Base's native security features
+- Follow Base ecosystem security standards
+
+## Security Testing for Base
+- Test Base-specific security patterns
+- Test Base's native security features
+- Test for Base-specific vulnerabilities
+- Test Base ecosystem integrations
+- Test Base's access control mechanisms
+
+## Base-Specific Vulnerabilities
+- Test for Base-specific attack vectors
+- Test Base's L2 security considerations
+- Test Base ecosystem integrations
+- Test Base's native security features
+- Test Base-specific security patterns
+
+## Security Monitoring on Base
+- Monitor contracts on Base block explorer
+- Use Base-specific security monitoring tools
+- Implement proper security logging for Base
+- Use Base's indexing capabilities for security
+- Monitor Base-specific security metrics
+
+## Base Security Best Practices
+- Follow Base security best practices
+- Use Base-specific security patterns
+- Implement proper Base security measures
+- Use Base's native security features
+- Follow Base ecosystem security standards
+
+## Base Security Tools
+- Use Base-specific security tools
+- Use Base block explorer for security monitoring
+- Use Base's native security features
+- Use Base ecosystem security tools
+- Use Base-specific security patterns
+
+## Base Security Documentation
+- Document Base-specific security measures
+- Document Base security patterns
+- Document Base ecosystem security
+- Document Base's native security features
+- Document Base security best practices

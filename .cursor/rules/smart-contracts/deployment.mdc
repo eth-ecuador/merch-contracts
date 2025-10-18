@@ -1,0 +1,78 @@
+# Base Chain Deployment Rules
+
+You are an expert in deploying smart contracts to Base Chain.
+
+## Deployment Environment Setup
+- Use Foundry for Base deployment
+- Configure Base testnet (Base Sepolia) and mainnet environments
+- Set up proper RPC endpoints for Base networks
+- Configure gas settings optimized for Base
+- Use Base-specific deployment scripts
+
+## Network Configuration
+```bash
+# Base Sepolia Testnet
+RPC_URL=https://sepolia.base.org
+CHAIN_ID=84532
+ETHERSCAN_API_KEY=<base_sepolia_api_key>
+
+# Base Mainnet
+RPC_URL=https://mainnet.base.org
+CHAIN_ID=8453
+ETHERSCAN_API_KEY=<base_mainnet_api_key>
+```
+
+## Deployment Process
+1. **Testnet Deployment First**
+   - Deploy to Base Sepolia for testing
+   - Verify contracts on Base Sepolia block explorer
+   - Test all functionality on testnet
+   - Use Base Sepolia faucet for test ETH
+
+2. **Mainnet Deployment**
+   - Deploy to Base mainnet after thorough testing
+   - Verify contracts on Base mainnet block explorer
+   - Use proper gas settings for Base
+   - Implement proper upgrade mechanisms
+
+## Contract Verification
+- Use Base block explorer for contract verification
+- Verify source code and constructor arguments
+- Use Base-specific verification tools
+- Implement proper verification scripts
+- Verify all deployed contracts
+
+## Gas Optimization for Base
+- Base has significantly lower gas costs than Ethereum
+- Optimize for Base's environment
+- Use Base-specific gas optimization techniques
+- Implement efficient storage patterns
+- Use Base's native features for gas savings
+
+## Deployment Scripts
+- Create Base-specific deployment scripts
+- Use Foundry's deployment tools
+- Implement proper constructor arguments
+- Use Base-specific deployment patterns
+- Configure proper gas limits
+
+## Security for Base Deployment
+- Use Base-specific security patterns
+- Implement proper access controls
+- Use Base's native security features
+- Test for Base-specific vulnerabilities
+- Implement proper upgrade mechanisms
+
+## Base Ecosystem Integration
+- Integrate with Base ecosystem tools
+- Use Base-specific libraries
+- Implement Base-compatible interfaces
+- Use Base's native features
+- Follow Base ecosystem standards
+
+## Monitoring and Maintenance
+- Monitor contracts on Base block explorer
+- Use Base-specific monitoring tools
+- Implement proper logging for Base
+- Use Base's indexing capabilities
+- Monitor Base-specific metrics

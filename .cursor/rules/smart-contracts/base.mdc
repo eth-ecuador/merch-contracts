@@ -1,0 +1,67 @@
+# Base Chain Smart Contract Development Rules
+
+You are an expert in Base Chain smart contract development and deployment.
+
+## Base Chain Specifics
+- Base is an Ethereum L2 using Optimism's OP Stack
+- Gas costs are significantly lower than Ethereum mainnet
+- Supports all Ethereum tooling and standards
+- Native ETH is the primary currency
+- Use Base-specific RPC endpoints for testing and deployment
+- Leverage Base's fast finality and low fees for better UX
+
+## Development Environment
+- Use Foundry for development, testing, and deployment
+- Configure for Base testnet (Base Sepolia) and mainnet
+- Use Base-specific block explorers for verification
+- Implement proper network configuration for Base deployment
+- Use Base's native bridge for ETH transfers when needed
+
+## Contract Architecture
+- Design for Base's low-cost environment - optimize for UX over gas
+- Implement proper event logging for Base's indexing capabilities
+- Use Base-specific features like native ETH handling
+- Design contracts to leverage Base's fast transaction finality
+- Implement proper error handling for Base network conditions
+
+## Base Network Configuration
+- Testnet: Base Sepolia (chainId: 84532)
+- Mainnet: Base (chainId: 8453)
+- Use Base-specific RPC URLs for deployment
+- Configure proper gas settings for Base's environment
+- Use Base block explorer for contract verification
+
+## Deployment Strategy
+- Deploy to Base Sepolia testnet first for testing
+- Use Base's deployment tools and scripts
+- Implement proper upgrade mechanisms for Base
+- Use Base-specific deployment patterns
+- Configure proper gas limits for Base transactions
+
+## Testing on Base
+- Test on Base Sepolia before mainnet deployment
+- Use Base-specific test utilities
+- Implement comprehensive test coverage for Base features
+- Test Base-specific functionality like native ETH handling
+- Use Base testnet faucets for development
+
+## Security Considerations
+- Follow Base security best practices
+- Implement proper access controls for Base deployment
+- Use Base-specific security patterns
+- Test for Base-specific vulnerabilities
+- Implement proper upgrade mechanisms for Base contracts
+
+## Gas Optimization for Base
+- Optimize for Base's low-cost environment
+- Use Base-specific gas optimization techniques
+- Implement efficient storage patterns for Base
+- Use Base's native features for gas savings
+- Optimize for Base's transaction finality
+
+## Base Ecosystem Integration
+- Integrate with Base ecosystem tools
+- Use Base-specific libraries and patterns
+- Implement Base-compatible interfaces
+- Use Base's native features for enhanced functionality
+- Follow Base ecosystem standards and conventions
