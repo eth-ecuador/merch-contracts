@@ -22,7 +22,7 @@ coverage/
 coverage.json
 
 # Deployment files
-deployments/
+
 
 # IDE files
 .vscode/

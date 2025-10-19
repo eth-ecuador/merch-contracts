@@ -1,0 +1,7 @@
+{
+  "network": "base-sepolia",
+  "basicMerch": "0xaF7B67b88128820Fae205A07aDC055ed509Bdb12",
+  "premiumMerch": "0x71E3a04c9Ecc624656334756f70dAAA1fc4F985D",
+  "easIntegration": "0xfD0b399898efC0186E32eb81B630d7Cf7Bb6f217",
+  "merchManager": "0x648B7FfD8a5Dd9C901B6569E7a0DC9A2eAF4c9F1"
+}

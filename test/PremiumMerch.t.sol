@@ -2,8 +2,8 @@
 pragma solidity ^0.8.19;
 
 import "forge-std/Test.sol";
-import "../contracts/BasicMerch.sol";
-import "../contracts/PremiumMerch.sol";
+import "../src/BasicMerch.sol";
+import "../src/PremiumMerch.sol";
 
 contract PremiumMerchTest is Test {
     BasicMerch public basicMerch;
