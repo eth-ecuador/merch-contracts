@@ -21,6 +21,7 @@ contract EASIntegration is Ownable, ReentrancyGuard {
     }
     
     // State variables
+    uint256 private _attestationCounter;  // ✅ ADDED: Counter for unique attestation IDs
     mapping(bytes32 => AttendanceAttestation) public attestations;
     mapping(address => bytes32[]) public userAttestations;
     mapping(bytes32 => bytes32[]) public eventAttestations;
@@ -76,14 +77,16 @@ contract EASIntegration is Ownable, ReentrancyGuard {
         if (_eventId == bytes32(0)) revert InvalidEventId();
         if (_attendee == address(0)) revert InvalidAttendee();
         
-        // Generate unique attestation ID
+        // Generate unique attestation ID with counter to prevent collisions
         bytes32 attestationId = keccak256(
             abi.encodePacked(
                 _eventId,
                 _attendee,
                 _tokenId,
+                _isPremiumUpgrade,
                 block.timestamp,
-                block.number
+                block.number,
+                _attestationCounter++  // ✅ FIXED: Added counter for uniqueness
             )
         );
         
@@ -280,5 +283,13 @@ contract EASIntegration is Ownable, ReentrancyGuard {
         }
         
         return attestationIds;
+    }
+    
+    /**
+     * @dev Get the current attestation counter value
+     * @return uint256 The current counter value
+     */
+    function getAttestationCounter() external view returns (uint256) {
+        return _attestationCounter;
     }
 }
