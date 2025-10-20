@@ -35,19 +35,31 @@ contract MerchManager is Ownable, ReentrancyGuard {
         address indexed user,
         uint256 indexed sbtId,
         uint256 indexed premiumId,
+        bytes32 eventId,
         bytes32 attestationId
+    );
+    event ContractsUpdated(
+        address indexed basicMerch,
+        address indexed premiumMerch,
+        address indexed easIntegration
     );
     
     // Errors
     error EventNotRegistered();
-    error ContractNotSet();
+    error EventAlreadyRegistered();
     error InvalidEventId();
+    error InvalidAddress();
+    error ArrayLengthMismatch();
     
     constructor(
         address _basicMerch,
         address _premiumMerch,
         address _easIntegration
     ) Ownable(msg.sender) {
+        if (_basicMerch == address(0)) revert InvalidAddress();
+        if (_premiumMerch == address(0)) revert InvalidAddress();
+        if (_easIntegration == address(0)) revert InvalidAddress();
+        
         basicMerch = BasicMerch(_basicMerch);
         premiumMerch = PremiumMerch(_premiumMerch);
         easIntegration = EASIntegration(_easIntegration);
@@ -63,8 +75,8 @@ contract MerchManager is Ownable, ReentrancyGuard {
     }
     
     function _registerEvent(bytes32 _eventId, string memory _metadata) internal {
-        require(_eventId != bytes32(0), "Invalid event ID");
-        require(!registeredEvents[_eventId], "Event already registered");
+        if (_eventId == bytes32(0)) revert InvalidEventId();
+        if (registeredEvents[_eventId]) revert EventAlreadyRegistered();
         
         registeredEvents[_eventId] = true;
         eventMetadata[_eventId] = _metadata;
@@ -79,12 +91,13 @@ contract MerchManager is Ownable, ReentrancyGuard {
      * @param _eventId The event ID for attestation
      * @return uint256 The minted token ID
      * @return bytes32 The created attestation ID
+     * @notice Requires MerchManager to be whitelisted in BasicMerch contract
      */
     function mintSBTWithAttestation(
         address _to,
         string memory _tokenURI,
         bytes32 _eventId
-    ) external nonReentrant returns (uint256, bytes32) {
+    ) external onlyOwner nonReentrant returns (uint256, bytes32) {
         // Verify event is registered
         if (!registeredEvents[_eventId]) {
             revert EventNotRegistered();
@@ -125,7 +138,8 @@ contract MerchManager is Ownable, ReentrancyGuard {
         }
         
         // Upgrade the SBT (this will burn the SBT and mint premium NFT)
-        premiumMerch.upgradeSBT{value: msg.value}(_sbtId, _organizer);
+        // Pass msg.sender as the upgrader address
+        premiumMerch.upgradeSBT{value: msg.value}(_sbtId, _organizer, msg.sender);
         
         // Get the premium token ID from the mapping
         uint256 premiumId = premiumMerch.getPremiumTokenId(_sbtId);
@@ -138,7 +152,7 @@ contract MerchManager is Ownable, ReentrancyGuard {
             true
         );
         
-        emit SBTUpgradedWithAttestation(msg.sender, _sbtId, premiumId, attestationId);
+        emit SBTUpgradedWithAttestation(msg.sender, _sbtId, premiumId, _eventId, attestationId);
         
         return (premiumId, attestationId);
     }
@@ -206,6 +220,15 @@ contract MerchManager is Ownable, ReentrancyGuard {
     }
     
     /**
+     * @dev Check if event is registered
+     * @param _eventId The event ID
+     * @return bool True if event is registered
+     */
+    function isEventRegistered(bytes32 _eventId) external view returns (bool) {
+        return registeredEvents[_eventId];
+    }
+    
+    /**
      * @dev Update contract references
      * @param _basicMerch New basic merch contract address
      * @param _premiumMerch New premium merch contract address
@@ -216,13 +239,15 @@ contract MerchManager is Ownable, ReentrancyGuard {
         address _premiumMerch,
         address _easIntegration
     ) external onlyOwner {
-        require(_basicMerch != address(0), "Invalid basic merch address");
-        require(_premiumMerch != address(0), "Invalid premium merch address");
-        require(_easIntegration != address(0), "Invalid EAS integration address");
+        if (_basicMerch == address(0)) revert InvalidAddress();
+        if (_premiumMerch == address(0)) revert InvalidAddress();
+        if (_easIntegration == address(0)) revert InvalidAddress();
         
         basicMerch = BasicMerch(_basicMerch);
         premiumMerch = PremiumMerch(_premiumMerch);
         easIntegration = EASIntegration(_easIntegration);
+        
+        emit ContractsUpdated(_basicMerch, _premiumMerch, _easIntegration);
     }
     
     /**
@@ -234,10 +259,12 @@ contract MerchManager is Ownable, ReentrancyGuard {
         bytes32[] memory _eventIds,
         string[] memory _metadataArray
     ) external onlyOwner {
-        require(_eventIds.length == _metadataArray.length, "Array length mismatch");
+        uint256 length = _eventIds.length;
+        if (length != _metadataArray.length) revert ArrayLengthMismatch();
         
-        for (uint256 i = 0; i < _eventIds.length; i++) {
+        for (uint256 i = 0; i < length;) {
             _registerEvent(_eventIds[i], _metadataArray[i]);
+            unchecked { ++i; }
         }
     }
     
@@ -253,5 +280,28 @@ contract MerchManager is Ownable, ReentrancyGuard {
         returns (address, address, address) 
     {
         return (address(basicMerch), address(premiumMerch), address(easIntegration));
+    }
+    
+    /**
+     * @dev Get upgrade fee from premium contract
+     * @return uint256 The current upgrade fee
+     */
+    function getUpgradeFee() external view returns (uint256) {
+        return premiumMerch.upgradeFee();
+    }
+    
+    /**
+     * @dev Check if user can upgrade an SBT
+     * @param _sbtId The SBT ID
+     * @param _user The user address
+     * @return bool True if can upgrade
+     * @return string Reason message
+     */
+    function canUserUpgradeSBT(uint256 _sbtId, address _user) 
+        external 
+        view 
+        returns (bool, string memory) 
+    {
+        return premiumMerch.canUpgradeSBT(_sbtId, _user);
     }
 }

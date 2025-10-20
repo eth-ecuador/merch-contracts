@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 import "./BasicMerch.sol";
 
 /**
@@ -13,9 +14,14 @@ import "./BasicMerch.sol";
  * @notice This contract handles the paid tier with monetization and upgrade functionality
  */
 contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
+    using Strings for uint256;
+
     // State variables
     uint256 private _tokenIdCounter;
     string private _baseTokenURI;
+    
+    // Token URI storage
+    mapping(uint256 => string) private _tokenURIs;
     
     // Contract references
     BasicMerch public basicMerchContract;
@@ -38,6 +44,8 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
     event TreasurySet(address indexed newTreasury);
     event FeeSplitSet(uint256 treasurySplit, uint256 organizerSplit);
     event BaseURISet(string newBaseURI);
+    event TokenURISet(uint256 indexed tokenId, string tokenURI);
+    event ExcessRefunded(address indexed user, uint256 amount);
 
     // Errors
     error InsufficientFee();
@@ -46,6 +54,8 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
     error InvalidFeeSplit();
     error InvalidAddress();
     error SBTDoesNotExist();
+    error TransferFailed();
+    error NoFundsToWithdraw();
 
     constructor(
         string memory name,
@@ -54,6 +64,9 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
         address _treasury,
         uint256 _upgradeFee
     ) ERC721(name, symbol) Ownable(msg.sender) {
+        if (_basicMerchContract == address(0)) revert InvalidAddress();
+        if (_treasury == address(0)) revert InvalidAddress();
+        
         basicMerchContract = BasicMerch(_basicMerchContract);
         treasury = _treasury;
         upgradeFee = _upgradeFee;
@@ -67,66 +80,63 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
      * @dev Upgrade an SBT to a Premium ERC-721 NFT
      * @param _sbtId The ID of the SBT to upgrade
      * @param _organizer The organizer address to receive the fee split
+     * @param _upgrader The address performing the upgrade (token owner)
      * @notice Core monetization function - requires fee payment
      */
-    function upgradeSBT(uint256 _sbtId, address _organizer) 
+    function upgradeSBT(uint256 _sbtId, address _organizer, address _upgrader) 
         external 
         payable 
         nonReentrant 
         whenNotPaused 
     {
         // Validate inputs
-        require(_organizer != address(0), "Invalid organizer address");
-        require(msg.value >= upgradeFee, "Insufficient fee");
+        if (_organizer == address(0)) revert InvalidAddress();
+        if (msg.value < upgradeFee) revert InsufficientFee();
+        if (upgradedSBTs[_sbtId]) revert SBTAlreadyUpgraded();
         
-        // Check if SBT exists and is owned by caller
-        if (!basicMerchContract.isApprovedOrOwner(msg.sender, _sbtId)) {
+        // Check if SBT exists and is owned by upgrader
+        if (!basicMerchContract.isApprovedOrOwner(_upgrader, _sbtId)) {
             revert SBTNotOwned();
         }
         
-        // Check if SBT has already been upgraded
-        if (upgradedSBTs[_sbtId]) {
-            revert SBTAlreadyUpgraded();
-        }
-        
-        // Check if SBT exists
-        try basicMerchContract.ownerOf(_sbtId) returns (address owner) {
-            if (owner == address(0)) {
-                revert SBTDoesNotExist();
-            }
-        } catch {
-            revert SBTDoesNotExist();
+        // Handle excess payment refund
+        if (msg.value > upgradeFee) {
+            uint256 refund = msg.value - upgradeFee;
+            (bool refundSuccess, ) = _upgrader.call{value: refund}("");
+            if (!refundSuccess) revert TransferFailed();
+            emit ExcessRefunded(_upgrader, refund);
         }
         
         // Execute upgrade logic
-        _executeUpgrade(_sbtId, _organizer);
+        _executeUpgrade(_sbtId, _organizer, _upgrader);
     }
 
     /**
      * @dev Internal function to execute the upgrade process
      * @param _sbtId The SBT ID being upgraded
      * @param _organizer The organizer address
+     * @param _upgrader The address performing the upgrade
      */
-    function _executeUpgrade(uint256 _sbtId, address _organizer) internal {
-        // 1. Burn the SBT
-        basicMerchContract.burnSBT(_sbtId);
-        
-        // 2. Mark SBT as upgraded
+    function _executeUpgrade(uint256 _sbtId, address _organizer, address _upgrader) internal {
+        // 1. Mark SBT as upgraded BEFORE burning (protection against reentrancy)
         upgradedSBTs[_sbtId] = true;
         
-        // 3. Mint new Premium NFT
+        // 2. Mint new Premium NFT to the upgrader
         uint256 premiumId = _tokenIdCounter;
         _tokenIdCounter++;
-        _safeMint(msg.sender, premiumId);
+        _safeMint(_upgrader, premiumId);
         
-        // 4. Store mapping
+        // 3. Store mapping
         sbtToPremiumMapping[_sbtId] = premiumId;
         
-        // 5. Distribute fees
+        // 4. Burn the SBT (after state changes)
+        basicMerchContract.burnSBT(_sbtId);
+        
+        // 5. Distribute fees (interactions last)
         _distributeFees(_organizer);
         
         // 6. Emit events
-        emit SBTUpgraded(msg.sender, _sbtId, premiumId, msg.value);
+        emit SBTUpgraded(_upgrader, _sbtId, premiumId, upgradeFee);
     }
 
     /**
@@ -134,20 +144,20 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
      * @param _organizer The organizer address
      */
     function _distributeFees(address _organizer) internal {
-        uint256 totalFee = msg.value;
+        uint256 totalFee = upgradeFee;
         uint256 treasuryAmount = (totalFee * treasurySplit) / BASIS_POINTS;
         uint256 organizerAmount = totalFee - treasuryAmount;
         
         // Send to treasury
         if (treasuryAmount > 0 && treasury != address(0)) {
             (bool treasurySuccess, ) = treasury.call{value: treasuryAmount}("");
-            require(treasurySuccess, "Treasury transfer failed");
+            if (!treasurySuccess) revert TransferFailed();
         }
         
         // Send to organizer
         if (organizerAmount > 0) {
             (bool organizerSuccess, ) = _organizer.call{value: organizerAmount}("");
-            require(organizerSuccess, "Organizer transfer failed");
+            if (!organizerSuccess) revert TransferFailed();
         }
         
         emit FeeDistributed(_organizer, treasuryAmount, organizerAmount);
@@ -171,6 +181,42 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
+     * @dev Set token URI for a specific token (owner only)
+     * @param _tokenId The token ID
+     * @param _tokenURI The token URI
+     */
+    function setTokenURI(uint256 _tokenId, string memory _tokenURI) external onlyOwner {
+        if (_ownerOf(_tokenId) == address(0)) revert SBTDoesNotExist();
+        _tokenURIs[_tokenId] = _tokenURI;
+        emit TokenURISet(_tokenId, _tokenURI);
+    }
+
+    /**
+     * @dev Override tokenURI to return individual token URIs
+     * @param tokenId The token ID
+     * @return string The token URI
+     */
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        if (_ownerOf(tokenId) == address(0)) revert SBTDoesNotExist();
+        
+        string memory _tokenURI = _tokenURIs[tokenId];
+        string memory base = _baseURI();
+        
+        // If there is no base URI, return the token URI
+        if (bytes(base).length == 0) {
+            return _tokenURI;
+        }
+        
+        // If both are set, return the specific token URI
+        if (bytes(_tokenURI).length > 0) {
+            return _tokenURI;
+        }
+        
+        // If only base URI is set, concatenate with token ID
+        return string(abi.encodePacked(base, tokenId.toString()));
+    }
+
+    /**
      * @dev Set the upgrade fee
      * @param _newFee The new upgrade fee in wei
      */
@@ -184,7 +230,7 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
      * @param _newTreasury The new treasury address
      */
     function setTreasury(address _newTreasury) external onlyOwner {
-        require(_newTreasury != address(0), "Invalid treasury address");
+        if (_newTreasury == address(0)) revert InvalidAddress();
         treasury = _newTreasury;
         emit TreasurySet(_newTreasury);
     }
@@ -195,8 +241,8 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
      * @param _organizerSplit Organizer split in basis points
      */
     function setFeeSplit(uint256 _treasurySplit, uint256 _organizerSplit) external onlyOwner {
-        require(_treasurySplit + _organizerSplit == BASIS_POINTS, "Invalid fee split");
-        require(_treasurySplit > 0 && _organizerSplit > 0, "Splits must be positive");
+        if (_treasurySplit + _organizerSplit != BASIS_POINTS) revert InvalidFeeSplit();
+        if (_treasurySplit == 0 || _organizerSplit == 0) revert InvalidFeeSplit();
         
         treasurySplit = _treasurySplit;
         organizerSplit = _organizerSplit;
@@ -209,7 +255,7 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
      * @param _basicMerchContract The new basic merch contract address
      */
     function setBasicMerchContract(address _basicMerchContract) external onlyOwner {
-        require(_basicMerchContract != address(0), "Invalid contract address");
+        if (_basicMerchContract == address(0)) revert InvalidAddress();
         basicMerchContract = BasicMerch(_basicMerchContract);
     }
 
@@ -254,15 +300,39 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
+     * @dev Check if user can upgrade specific SBT
+     * @param _sbtId The SBT ID to check
+     * @param _user The user address
+     * @return bool True if can upgrade
+     * @return string Reason message
+     */
+    function canUpgradeSBT(uint256 _sbtId, address _user) 
+        external 
+        view 
+        returns (bool, string memory) 
+    {
+        if (upgradedSBTs[_sbtId]) {
+            return (false, "Already upgraded");
+        }
+        if (!basicMerchContract.isApprovedOrOwner(_user, _sbtId)) {
+            return (false, "Not owner");
+        }
+        if (paused()) {
+            return (false, "Contract paused");
+        }
+        return (true, "Can upgrade");
+    }
+
+    /**
      * @dev Emergency withdraw function for owner
      * @notice Only use in emergency situations
      */
     function emergencyWithdraw() external onlyOwner {
         uint256 balance = address(this).balance;
-        require(balance > 0, "No funds to withdraw");
+        if (balance == 0) revert NoFundsToWithdraw();
         
         (bool success, ) = owner().call{value: balance}("");
-        require(success, "Withdrawal failed");
+        if (!success) revert TransferFailed();
     }
 
     /**

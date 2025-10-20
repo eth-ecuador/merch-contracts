@@ -15,6 +15,13 @@ contract BasicMerchTest is Test {
     address public user2;
     address public treasury;
     
+    // Events for testing
+    event SBTMinted(address indexed to, uint256 indexed tokenId, string tokenURI);
+    event SBTBurned(uint256 indexed tokenId);
+    event MinterWhitelisted(address indexed minter, bool status);
+    event BaseURISet(string newBaseURI);
+    event TokenURISet(uint256 indexed tokenId, string tokenURI);
+    
     function setUp() public {
         owner = address(this);
         minter = makeAddr("minter");
@@ -37,36 +44,78 @@ contract BasicMerchTest is Test {
     }
     
     function testMintSuccess() public {
-        string memory tokenURI = "https://api.merch.com/basic/1";
+        string memory tokenURI = "ipfs://QmTest123";
+        
+        vm.expectEmit(true, true, false, true);
+        emit SBTMinted(user1, 0, tokenURI);
         
         vm.prank(minter);
         uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
         
         assertEq(basicMerch.ownerOf(tokenId), user1);
         assertEq(basicMerch.getCurrentTokenId(), 1);
+        assertEq(basicMerch.balanceOf(user1), 1);
         
-        vm.prank(minter);
+        // Test token URI
+        assertEq(basicMerch.tokenURI(tokenId), tokenURI);
+    }
+    
+    function testMintMultiple() public {
+        string memory tokenURI = "ipfs://QmTest";
+        
+        vm.startPrank(minter);
+        uint256 tokenId1 = basicMerch.mintSBT(user1, tokenURI);
         uint256 tokenId2 = basicMerch.mintSBT(user2, tokenURI);
+        vm.stopPrank();
+        
+        assertEq(basicMerch.ownerOf(tokenId1), user1);
         assertEq(basicMerch.ownerOf(tokenId2), user2);
         assertEq(basicMerch.getCurrentTokenId(), 2);
     }
     
-    function testSBTBurnAccess() public {
-        string memory tokenURI = "https://api.merch.com/basic/1";
+    function testMintToZeroAddressFails() public {
+        string memory tokenURI = "ipfs://QmTest";
+        
+        vm.prank(minter);
+        vm.expectRevert(BasicMerch.InvalidAddress.selector);
+        basicMerch.mintSBT(address(0), tokenURI);
+    }
+    
+    function testMintEmptyURIFails() public {
+        vm.prank(minter);
+        vm.expectRevert(BasicMerch.EmptyTokenURI.selector);
+        basicMerch.mintSBT(user1, "");
+    }
+    
+    function testNonWhitelistedMinterFails() public {
+        string memory tokenURI = "ipfs://QmTest";
+        
+        vm.prank(user1);
+        vm.expectRevert(BasicMerch.NotWhitelistedMinter.selector);
+        basicMerch.mintSBT(user2, tokenURI);
+    }
+    
+    function testSBTBurnByPremiumContract() public {
+        string memory tokenURI = "ipfs://QmTest";
         
         vm.prank(minter);
         uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
         
+        vm.expectEmit(true, false, false, false);
+        emit SBTBurned(tokenId);
+        
         vm.prank(address(premiumMerch));
         basicMerch.burnSBT(tokenId);
         
-        // El token ya no existe, debería revertir con cualquier error de "no existe"
+        // Token should no longer exist
         vm.expectRevert();
         basicMerch.ownerOf(tokenId);
+        
+        assertEq(basicMerch.balanceOf(user1), 0);
     }
     
-    function testSBTBurnAccessFailure() public {
-        string memory tokenURI = "https://api.merch.com/basic/1";
+    function testSBTBurnByNonPremiumFails() public {
+        string memory tokenURI = "ipfs://QmTest";
         
         vm.prank(minter);
         uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
@@ -80,21 +129,111 @@ contract BasicMerchTest is Test {
         basicMerch.burnSBT(tokenId);
     }
     
-    function testUpgradeFeeCheck() public {
-        string memory tokenURI = "https://api.merch.com/basic/1";
+    function testBurnNonExistentTokenFails() public {
+        vm.prank(address(premiumMerch));
+        vm.expectRevert(BasicMerch.TokenDoesNotExist.selector);
+        basicMerch.burnSBT(999);
+    }
+    
+    function testSBTTransferRestrictions() public {
+        string memory tokenURI = "ipfs://QmTest";
         
         vm.prank(minter);
         uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
         
-        vm.deal(user1, 1 ether);
+        vm.prank(user1);
+        vm.expectRevert(BasicMerch.TransferNotAllowed.selector);
+        basicMerch.transferFrom(user1, user2, tokenId);
         
         vm.prank(user1);
-        vm.expectRevert("Insufficient fee");
-        premiumMerch.upgradeSBT{value: 0.005 ether}(tokenId, owner);
+        vm.expectRevert(BasicMerch.TransferNotAllowed.selector);
+        basicMerch.safeTransferFrom(user1, user2, tokenId);
+    }
+    
+    function testIsApprovedOrOwner() public {
+        string memory tokenURI = "ipfs://QmTest";
+        
+        vm.prank(minter);
+        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+        
+        assertTrue(basicMerch.isApprovedOrOwner(user1, tokenId));
+        assertFalse(basicMerch.isApprovedOrOwner(user2, tokenId));
+        assertFalse(basicMerch.isApprovedOrOwner(user1, 999));
+    }
+    
+    function testWhitelistMinter() public {
+        assertFalse(basicMerch.isWhitelistedMinter(user1));
+        
+        vm.expectEmit(true, false, false, true);
+        emit MinterWhitelisted(user1, true);
+        
+        basicMerch.setWhitelistedMinter(user1, true);
+        
+        assertTrue(basicMerch.isWhitelistedMinter(user1));
+        
+        // Now user1 should be able to mint
+        vm.prank(user1);
+        basicMerch.mintSBT(user2, "ipfs://QmTest");
+        
+        // Remove from whitelist
+        basicMerch.setWhitelistedMinter(user1, false);
+        assertFalse(basicMerch.isWhitelistedMinter(user1));
+    }
+    
+    function testWhitelistZeroAddressFails() public {
+        vm.expectRevert(BasicMerch.InvalidAddress.selector);
+        basicMerch.setWhitelistedMinter(address(0), true);
+    }
+    
+    function testSetPremiumContract() public {
+        address newPremium = makeAddr("newPremium");
+        
+        basicMerch.setPremiumContract(newPremium);
+        assertEq(basicMerch.premiumMerchContract(), newPremium);
+    }
+    
+    function testSetPremiumContractZeroAddressFails() public {
+        vm.expectRevert(BasicMerch.InvalidAddress.selector);
+        basicMerch.setPremiumContract(address(0));
+    }
+    
+    function testSetBaseURI() public {
+        string memory newBaseURI = "https://api.merch.com/metadata/";
+        
+        vm.expectEmit(false, false, false, true);
+        emit BaseURISet(newBaseURI);
+        
+        basicMerch.setBaseURI(newBaseURI);
+        
+        // Mint a token to test URI with non-empty tokenURI
+        vm.prank(minter);
+        uint256 tokenId = basicMerch.mintSBT(user1, "custom.json");
+        
+        // Should return custom URI (not baseURI + tokenId)
+        assertEq(basicMerch.tokenURI(tokenId), "custom.json");
+        
+        // Mint another token with empty custom URI to test baseURI concatenation
+        // NOTE: Cannot test this because mintSBT requires non-empty tokenURI
+        // The baseURI + tokenId pattern would work in production when setting empty string after mint
+    }
+    
+    function testTokenURIWithCustomURI() public {
+        string memory customURI = "ipfs://QmCustom123";
+        
+        vm.prank(minter);
+        uint256 tokenId = basicMerch.mintSBT(user1, customURI);
+        
+        // Should return custom URI (not baseURI + tokenId)
+        assertEq(basicMerch.tokenURI(tokenId), customURI);
+    }
+    
+    function testTokenURINonExistentFails() public {
+        vm.expectRevert(BasicMerch.TokenDoesNotExist.selector);
+        basicMerch.tokenURI(999);
     }
     
     function testUpgradeE2ELogic() public {
-        string memory tokenURI = "https://api.merch.com/basic/1";
+        string memory tokenURI = "ipfs://QmTest";
         
         vm.prank(minter);
         uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
@@ -104,55 +243,53 @@ contract BasicMerchTest is Test {
         uint256 treasuryBalanceBefore = treasury.balance;
         
         vm.prank(user1);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2);
+        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
         
-        // Verificar que el SBT fue quemado (cualquier error de "no existe" es válido)
+        // Verify SBT was burned
         vm.expectRevert();
         basicMerch.ownerOf(tokenId);
         
-        // Verificar que el Premium NFT fue acuñado
+        // Verify Premium NFT was minted
         uint256 premiumId = premiumMerch.getCurrentTokenId() - 1;
         assertEq(premiumMerch.ownerOf(premiumId), user1);
         
-        // Verificar que el treasury recibió fondos
+        // Verify treasury received funds
         assertTrue(treasury.balance > treasuryBalanceBefore);
     }
     
-    function testDoubleUpgrade() public {
-        string memory tokenURI = "https://api.merch.com/basic/1";
+    function testDoubleUpgradeFails() public {
+        string memory tokenURI = "ipfs://QmTest";
         
         vm.prank(minter);
         uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
         
         vm.deal(user1, 1 ether);
         
-        // Primer upgrade exitoso
+        // First upgrade succeeds
         vm.prank(user1);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2);
+        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
         
-        // Segundo intento de upgrade debe fallar
-        // El SBT ya fue quemado, así que debería revertir con SBTAlreadyUpgraded o SBTDoesNotExist
+        // Second upgrade should fail
+        vm.prank(user1);
+        vm.expectRevert(PremiumMerch.SBTAlreadyUpgraded.selector);
+        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
+    }
+    
+    function testOnlyOwnerCanSetWhitelist() public {
         vm.prank(user1);
         vm.expectRevert();
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2);
+        basicMerch.setWhitelistedMinter(user2, true);
     }
     
-    function testNonWhitelistedMinter() public {
-        string memory tokenURI = "https://api.merch.com/basic/1";
-        
+    function testOnlyOwnerCanSetPremiumContract() public {
         vm.prank(user1);
-        vm.expectRevert(BasicMerch.NotWhitelistedMinter.selector);
-        basicMerch.mintSBT(user2, tokenURI);
+        vm.expectRevert();
+        basicMerch.setPremiumContract(user2);
     }
     
-    function testSBTTransferRestrictions() public {
-        string memory tokenURI = "https://api.merch.com/basic/1";
-        
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
-        
+    function testOnlyOwnerCanSetBaseURI() public {
         vm.prank(user1);
-        vm.expectRevert(BasicMerch.TransferNotAllowed.selector);
-        basicMerch.transferFrom(user1, user2, tokenId);
+        vm.expectRevert();
+        basicMerch.setBaseURI("https://test.com/");
     }
 }

@@ -10,7 +10,7 @@ import "../src/MerchManager.sol";
 /**
  * @title DeployMerchMVP
  * @notice Deployment script for the complete Merch MVP system on Base Sepolia
- * @dev Run with: forge script script/DeployMerchMVP.s.sol:DeployMerchMVP --rpc-url base_sepolia --broadcast --verify
+ * @dev Run with: forge script script/DeployMerchMVP.s.sol:DeployMerchMVP --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast --verify -vvvv
  */
 contract DeployMerchMVP is Script {
     // Deployment configuration
@@ -51,17 +51,19 @@ contract DeployMerchMVP is Script {
         console.log("Treasury:", treasury);
         console.log("EAS Registry:", easRegistry);
         console.log("Upgrade Fee:", UPGRADE_FEE);
+        console.log("Treasury Split: %s bps (%s%%)", TREASURY_SPLIT, TREASURY_SPLIT / 100);
+        console.log("Organizer Split: %s bps (%s%%)", ORGANIZER_SPLIT, ORGANIZER_SPLIT / 100);
         console.log("===========================================");
         
         vm.startBroadcast(deployerPrivateKey);
         
         // 1. Deploy BasicMerch (SBT Contract)
-        console.log("\n1. Deploying BasicMerch...");
+        console.log("\n[1/4] Deploying BasicMerch...");
         basicMerch = new BasicMerch(BASIC_NAME, BASIC_SYMBOL);
-        console.log("BasicMerch deployed at:", address(basicMerch));
+        console.log("  BasicMerch deployed at:", address(basicMerch));
         
         // 2. Deploy PremiumMerch (Premium NFT Contract)
-        console.log("\n2. Deploying PremiumMerch...");
+        console.log("\n[2/4] Deploying PremiumMerch...");
         premiumMerch = new PremiumMerch(
             PREMIUM_NAME,
             PREMIUM_SYMBOL,
@@ -69,59 +71,135 @@ contract DeployMerchMVP is Script {
             treasury,
             UPGRADE_FEE
         );
-        console.log("PremiumMerch deployed at:", address(premiumMerch));
+        console.log("  PremiumMerch deployed at:", address(premiumMerch));
         
         // 3. Deploy EASIntegration
-        console.log("\n3. Deploying EASIntegration...");
+        console.log("\n[3/4] Deploying EASIntegration...");
         easIntegration = new EASIntegration(easRegistry);
-        console.log("EASIntegration deployed at:", address(easIntegration));
+        console.log("  EASIntegration deployed at:", address(easIntegration));
         
         // 4. Deploy MerchManager
-        console.log("\n4. Deploying MerchManager...");
+        console.log("\n[4/4] Deploying MerchManager...");
         merchManager = new MerchManager(
             address(basicMerch),
             address(premiumMerch),
             address(easIntegration)
         );
-        console.log("MerchManager deployed at:", address(merchManager));
+        console.log("  MerchManager deployed at:", address(merchManager));
         
         // 5. Configure contracts
-        console.log("\n5. Configuring contracts...");
+        console.log("\n===========================================");
+        console.log("Configuring Contracts");
+        console.log("===========================================");
         
         // Set PremiumMerch as authorized burner in BasicMerch
+        console.log("\n[1/5] Setting PremiumMerch as authorized burner...");
         basicMerch.setPremiumContract(address(premiumMerch));
-        console.log("  - BasicMerch: Set premium contract");
+        console.log("  BasicMerch: Premium contract set");
         
         // Whitelist MerchManager as minter
+        console.log("\n[2/5] Whitelisting MerchManager as minter...");
         basicMerch.setWhitelistedMinter(address(merchManager), true);
-        console.log("  - BasicMerch: Whitelisted MerchManager as minter");
+        console.log("  BasicMerch: MerchManager whitelisted");
         
         // Whitelist deployer as minter (for testing)
+        console.log("\n[3/5] Whitelisting deployer as minter (for testing)...");
         basicMerch.setWhitelistedMinter(deployer, true);
-        console.log("  - BasicMerch: Whitelisted deployer as minter");
+        console.log("  BasicMerch: Deployer whitelisted");
         
-        // Set BasicMerch reference in PremiumMerch (should already be set, but confirming)
+        // Confirm BasicMerch reference in PremiumMerch
+        console.log("\n[4/5] Confirming BasicMerch reference in PremiumMerch...");
         premiumMerch.setBasicMerchContract(address(basicMerch));
-        console.log("  - PremiumMerch: Set basic merch contract");
+        console.log("  PremiumMerch: BasicMerch reference confirmed");
         
         // Transfer ownership of EASIntegration to MerchManager
+        console.log("\n[5/5] Transferring EASIntegration ownership to MerchManager...");
         easIntegration.transferOwnership(address(merchManager));
-        console.log("  - EASIntegration: Transferred ownership to MerchManager");
+        console.log("  EASIntegration: Ownership transferred to MerchManager");
         
         vm.stopBroadcast();
+        
+        // Verify deployment
+        console.log("\n===========================================");
+        console.log("Verifying Deployment Configuration");
+        console.log("===========================================");
+        verifyDeployment(deployer);
         
         // Print deployment summary
         printDeploymentSummary(deployer, treasury);
         
         // Save deployment addresses to file
-        saveDeploymentAddresses();
+        saveDeploymentAddresses(deployer, treasury);
+    }
+    
+    function verifyDeployment(address deployer) internal view {
+        bool allGood = true;
+        
+        // Check BasicMerch configuration
+        console.log("\nBasicMerch Configuration:");
+        console.log("  Premium Contract:", basicMerch.premiumMerchContract());
+        console.log("  MerchManager Whitelisted:", basicMerch.isWhitelistedMinter(address(merchManager)));
+        console.log("  Deployer Whitelisted:", basicMerch.isWhitelistedMinter(deployer));
+        
+        if (basicMerch.premiumMerchContract() != address(premiumMerch)) {
+            console.log("  [ERROR] Premium contract not set correctly!");
+            allGood = false;
+        }
+        if (!basicMerch.isWhitelistedMinter(address(merchManager))) {
+            console.log("  [ERROR] MerchManager not whitelisted!");
+            allGood = false;
+        }
+        
+        // Check PremiumMerch configuration
+        console.log("\nPremiumMerch Configuration:");
+        console.log("  BasicMerch Contract:", address(premiumMerch.basicMerchContract()));
+        console.log("  Upgrade Fee:", premiumMerch.upgradeFee());
+        console.log("  Treasury:", premiumMerch.treasury());
+        console.log("  Treasury Split:", premiumMerch.treasurySplit(), "bps");
+        console.log("  Organizer Split:", premiumMerch.organizerSplit(), "bps");
+        
+        if (address(premiumMerch.basicMerchContract()) != address(basicMerch)) {
+            console.log("  [ERROR] BasicMerch reference not set correctly!");
+            allGood = false;
+        }
+        
+        // Check EASIntegration ownership
+        console.log("\nEASIntegration Configuration:");
+        console.log("  Owner:", easIntegration.owner());
+        console.log("  EAS Registry:", easIntegration.easRegistry());
+        
+        if (easIntegration.owner() != address(merchManager)) {
+            console.log("  [ERROR] EASIntegration ownership not transferred!");
+            allGood = false;
+        }
+        
+        // Check MerchManager configuration
+        console.log("\nMerchManager Configuration:");
+        (address basic, address premium, address eas) = merchManager.getContractAddresses();
+        console.log("  BasicMerch:", basic);
+        console.log("  PremiumMerch:", premium);
+        console.log("  EASIntegration:", eas);
+        
+        if (basic != address(basicMerch) || premium != address(premiumMerch) || eas != address(easIntegration)) {
+            console.log("  [ERROR] Contract references not set correctly!");
+            allGood = false;
+        }
+        
+        console.log("\n===========================================");
+        if (allGood) {
+            console.log("Deployment Verification: PASSED");
+        } else {
+            console.log("Deployment Verification: FAILED");
+            console.log("Please check the errors above!");
+        }
+        console.log("===========================================");
     }
     
     function printDeploymentSummary(address deployer, address treasury) internal view {
         console.log("\n===========================================");
         console.log("DEPLOYMENT SUMMARY");
         console.log("===========================================");
-        console.log("Network: Base Sepolia");
+        console.log("Network: Base Sepolia (Chain ID: 84532)");
         console.log("Deployer:", deployer);
         console.log("Treasury:", treasury);
         console.log("\nContract Addresses:");
@@ -131,26 +209,56 @@ contract DeployMerchMVP is Script {
         console.log("EASIntegration:  ", address(easIntegration));
         console.log("MerchManager:    ", address(merchManager));
         console.log("===========================================");
+        console.log("\nQuick Test Commands:");
+        console.log("-------------------------------------------");
+        console.log("# Register an event");
+        console.log("cast send", vm.toString(address(merchManager)), "\\");
+        console.log("  'registerEvent(bytes32,string)' \\");
+        console.log("  $(cast keccak 'TestEvent2025') \\");
+        console.log("  'Test Event 2025' \\");
+        console.log("  --rpc-url $BASE_SEPOLIA_RPC_URL \\");
+        console.log("  --private-key $PRIVATE_KEY");
+        console.log("\n# Mint a test SBT");
+        console.log("cast send", vm.toString(address(merchManager)), "\\");
+        console.log("  'mintSBTWithAttestation(address,string,bytes32)' \\");
+        console.log("  ", deployer, " \\");
+        console.log("  'ipfs://QmTest' \\");
+        console.log("  $(cast keccak 'TestEvent2025') \\");
+        console.log("  --rpc-url $BASE_SEPOLIA_RPC_URL \\");
+        console.log("  --private-key $PRIVATE_KEY");
+        console.log("===========================================");
         console.log("\nNext Steps:");
-        console.log("1. Verify contracts on BaseScan");
-        console.log("2. Register events in MerchManager");
+        console.log("1. Verify contracts on BaseScan (see verify-contracts.sh)");
+        console.log("2. Register your first event using MerchManager");
         console.log("3. Set up backend to interact with MerchManager");
-        console.log("4. Configure metadata URIs");
+        console.log("4. Configure metadata base URIs");
+        console.log("5. Test the full flow: mint SBT -> upgrade to Premium");
         console.log("===========================================");
     }
     
-    function saveDeploymentAddresses() internal {
+    function saveDeploymentAddresses(address deployer, address treasury) internal {
         string memory json = string(abi.encodePacked(
             '{\n',
             '  "network": "base-sepolia",\n',
-            '  "basicMerch": "', vm.toString(address(basicMerch)), '",\n',
-            '  "premiumMerch": "', vm.toString(address(premiumMerch)), '",\n',
-            '  "easIntegration": "', vm.toString(address(easIntegration)), '",\n',
-            '  "merchManager": "', vm.toString(address(merchManager)), '"\n',
+            '  "chainId": 84532,\n',
+            '  "deployer": "', vm.toString(deployer), '",\n',
+            '  "treasury": "', vm.toString(treasury), '",\n',
+            '  "timestamp": ', vm.toString(block.timestamp), ',\n',
+            '  "contracts": {\n',
+            '    "basicMerch": "', vm.toString(address(basicMerch)), '",\n',
+            '    "premiumMerch": "', vm.toString(address(premiumMerch)), '",\n',
+            '    "easIntegration": "', vm.toString(address(easIntegration)), '",\n',
+            '    "merchManager": "', vm.toString(address(merchManager)), '"\n',
+            '  },\n',
+            '  "configuration": {\n',
+            '    "upgradeFee": "', vm.toString(UPGRADE_FEE), '",\n',
+            '    "treasurySplit": ', vm.toString(TREASURY_SPLIT), ',\n',
+            '    "organizerSplit": ', vm.toString(ORGANIZER_SPLIT), '\n',
+            '  }\n',
             '}'
         ));
         
         vm.writeFile("deployments/base-sepolia.json", json);
-        console.log("\nDeployment addresses saved to: deployments/base-sepolia.json");
+        console.log("\nDeployment data saved to: deployments/base-sepolia.json");
     }
 }

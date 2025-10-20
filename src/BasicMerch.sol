@@ -4,16 +4,23 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title BasicMerch
  * @dev ERC-4973 Soul Bound Token (SBT) implementation for free tier attendance proof
  * @notice This contract handles non-transferable proof of attendance tokens
+ * @notice Implements ERC-4973-like behavior by preventing transfers after minting
  */
 contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
+    using Strings for uint256;
+
     // State variables
     uint256 private _tokenIdCounter;
     string private _baseTokenURI;
+    
+    // Token URI storage
+    mapping(uint256 => string) private _tokenURIs;
     
     // Access control
     mapping(address => bool) public whitelistedMinters;
@@ -24,12 +31,16 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
     event SBTBurned(uint256 indexed tokenId);
     event MinterWhitelisted(address indexed minter, bool status);
     event PremiumContractSet(address indexed premiumContract);
+    event BaseURISet(string newBaseURI);
+    event TokenURISet(uint256 indexed tokenId, string tokenURI);
 
     // Errors
     error NotWhitelistedMinter();
     error NotPremiumContract();
     error TokenDoesNotExist();
     error TransferNotAllowed();
+    error InvalidAddress();
+    error EmptyTokenURI();
 
     constructor(string memory name, string memory symbol) ERC721(name, symbol) Ownable(msg.sender) {}
 
@@ -65,8 +76,8 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
         nonReentrant 
         returns (uint256) 
     {
-        require(_to != address(0), "Cannot mint to zero address");
-        require(bytes(_tokenURI).length > 0, "Token URI cannot be empty");
+        if (_to == address(0)) revert InvalidAddress();
+        if (bytes(_tokenURI).length == 0) revert EmptyTokenURI();
 
         uint256 tokenId = _tokenIdCounter;
         _tokenIdCounter++;
@@ -88,7 +99,9 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
             revert TokenDoesNotExist();
         }
 
-        address owner = ownerOf(_tokenId);
+        // Clear token URI to free storage
+        delete _tokenURIs[_tokenId];
+        
         _burn(_tokenId);
         
         emit SBTBurned(_tokenId);
@@ -146,6 +159,7 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
      */
     function setBaseURI(string memory baseURI) external onlyOwner {
         _baseTokenURI = baseURI;
+        emit BaseURISet(baseURI);
     }
 
     /**
@@ -162,9 +176,34 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
      * @param _tokenURI The token URI
      */
     function _setTokenURI(uint256 tokenId, string memory _tokenURI) internal {
-        require(_exists(tokenId), "URI set of nonexistent token");
-        // Note: In a full implementation, you might want to store this in a mapping
-        // For this MVP, we'll use the base URI + token ID pattern
+        if (!_exists(tokenId)) revert TokenDoesNotExist();
+        _tokenURIs[tokenId] = _tokenURI;
+        emit TokenURISet(tokenId, _tokenURI);
+    }
+
+    /**
+     * @dev Override tokenURI to return individual token URIs
+     * @param tokenId The token ID
+     * @return string The token URI
+     */
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        if (!_exists(tokenId)) revert TokenDoesNotExist();
+        
+        string memory _tokenURI = _tokenURIs[tokenId];
+        string memory base = _baseURI();
+        
+        // If there is no base URI, return the token URI
+        if (bytes(base).length == 0) {
+            return _tokenURI;
+        }
+        
+        // If both are set, return the specific token URI
+        if (bytes(_tokenURI).length > 0) {
+            return _tokenURI;
+        }
+        
+        // If only base URI is set, concatenate with token ID
+        return string(abi.encodePacked(base, tokenId.toString()));
     }
 
     /**
@@ -173,6 +212,7 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
      * @param _status True to whitelist, false to remove
      */
     function setWhitelistedMinter(address _minter, bool _status) external onlyOwner {
+        if (_minter == address(0)) revert InvalidAddress();
         whitelistedMinters[_minter] = _status;
         emit MinterWhitelisted(_minter, _status);
     }
@@ -182,6 +222,7 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
      * @param _premiumContract The address of the premium merch contract
      */
     function setPremiumContract(address _premiumContract) external onlyOwner {
+        if (_premiumContract == address(0)) revert InvalidAddress();
         premiumMerchContract = _premiumContract;
         emit PremiumContractSet(_premiumContract);
     }
@@ -201,5 +242,14 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
      */
     function _exists(uint256 tokenId) internal view returns (bool) {
         return _ownerOf(tokenId) != address(0);
+    }
+
+    /**
+     * @dev Check if a minter is whitelisted
+     * @param _minter The address to check
+     * @return bool True if minter is whitelisted
+     */
+    function isWhitelistedMinter(address _minter) external view returns (bool) {
+        return whitelistedMinters[_minter];
     }
 }

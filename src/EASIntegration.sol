@@ -39,11 +39,14 @@ contract EASIntegration is Ownable, ReentrancyGuard {
     event EASRegistrySet(address indexed registry);
     
     // Errors
-    error InvalidAttestationData();
+    error InvalidEventId();
+    error InvalidAttendee();
     error AttestationNotFound();
     error InvalidEASRegistry();
+    error ArrayLengthMismatch();
     
     constructor(address _easRegistry) Ownable(msg.sender) {
+        if (_easRegistry == address(0)) revert InvalidEASRegistry();
         easRegistry = _easRegistry;
     }
     
@@ -70,8 +73,8 @@ contract EASIntegration is Ownable, ReentrancyGuard {
         uint256 _tokenId,
         bool _isPremiumUpgrade
     ) internal returns (bytes32) {
-        require(_eventId != bytes32(0), "Invalid event ID");
-        require(_attendee != address(0), "Invalid attendee");
+        if (_eventId == bytes32(0)) revert InvalidEventId();
+        if (_attendee == address(0)) revert InvalidAttendee();
         
         // Generate unique attestation ID
         bytes32 attestationId = keccak256(
@@ -177,7 +180,7 @@ contract EASIntegration is Ownable, ReentrancyGuard {
     }
     
     /**
-     * @dev Check if a user has attended a specific event
+     * @dev Check if a user has attended a specific event (gas optimized)
      * @param _user The user address
      * @param _eventId The event ID
      * @return bool True if user has attended the event
@@ -188,16 +191,19 @@ contract EASIntegration is Ownable, ReentrancyGuard {
         returns (bool) 
     {
         bytes32[] memory userAtts = userAttestations[_user];
-        for (uint256 i = 0; i < userAtts.length; i++) {
+        uint256 length = userAtts.length;
+        
+        for (uint256 i = 0; i < length;) {
             if (attestations[userAtts[i]].eventId == _eventId) {
                 return true;
             }
+            unchecked { ++i; }
         }
         return false;
     }
     
     /**
-     * @dev Get premium upgrade attestations for a user
+     * @dev Get premium upgrade attestations for a user (gas optimized)
      * @param _user The user address
      * @return bytes32[] Array of premium upgrade attestation IDs
      */
@@ -207,20 +213,23 @@ contract EASIntegration is Ownable, ReentrancyGuard {
         returns (bytes32[] memory) 
     {
         bytes32[] memory userAtts = userAttestations[_user];
-        bytes32[] memory premiumUpgrades = new bytes32[](userAtts.length);
+        uint256 length = userAtts.length;
+        bytes32[] memory premiumUpgrades = new bytes32[](length);
         uint256 count = 0;
         
-        for (uint256 i = 0; i < userAtts.length; i++) {
+        for (uint256 i = 0; i < length;) {
             if (attestations[userAtts[i]].isPremiumUpgrade) {
                 premiumUpgrades[count] = userAtts[i];
-                count++;
+                unchecked { ++count; }
             }
+            unchecked { ++i; }
         }
         
         // Resize array to actual count
         bytes32[] memory result = new bytes32[](count);
-        for (uint256 i = 0; i < count; i++) {
+        for (uint256 i = 0; i < count;) {
             result[i] = premiumUpgrades[i];
+            unchecked { ++i; }
         }
         
         return result;
@@ -231,7 +240,7 @@ contract EASIntegration is Ownable, ReentrancyGuard {
      * @param _registry The new EAS registry address
      */
     function setEASRegistry(address _registry) external onlyOwner {
-        require(_registry != address(0), "Invalid registry address");
+        if (_registry == address(0)) revert InvalidEASRegistry();
         easRegistry = _registry;
         emit EASRegistrySet(_registry);
     }
@@ -250,22 +259,24 @@ contract EASIntegration is Ownable, ReentrancyGuard {
         uint256[] memory _tokenIds,
         bool[] memory _isPremiumUpgrades
     ) external onlyOwner nonReentrant returns (bytes32[] memory) {
-        require(
-            _eventIds.length == _attendees.length &&
-            _attendees.length == _tokenIds.length &&
-            _tokenIds.length == _isPremiumUpgrades.length,
-            "Array length mismatch"
-        );
+        uint256 length = _eventIds.length;
         
-        bytes32[] memory attestationIds = new bytes32[](_eventIds.length);
+        if (length != _attendees.length ||
+            length != _tokenIds.length ||
+            length != _isPremiumUpgrades.length) {
+            revert ArrayLengthMismatch();
+        }
         
-        for (uint256 i = 0; i < _eventIds.length; i++) {
+        bytes32[] memory attestationIds = new bytes32[](length);
+        
+        for (uint256 i = 0; i < length;) {
             attestationIds[i] = _createAttendanceAttestation(
                 _eventIds[i],
                 _attendees[i],
                 _tokenIds[i],
                 _isPremiumUpgrades[i]
             );
+            unchecked { ++i; }
         }
         
         return attestationIds;
