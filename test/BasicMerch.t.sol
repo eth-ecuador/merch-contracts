@@ -23,7 +23,7 @@ contract BasicMerchTest is Test {
     
     function setUp() public {
         owner = address(this);
-        backendIssuer = makeAddr("backendIssuer");
+        backendIssuer = vm.addr(0x1); // Use a known private key
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
         treasury = makeAddr("treasury");
@@ -51,7 +51,7 @@ contract BasicMerchTest is Test {
         bytes32 messageHash = keccak256(abi.encodePacked(_to, _eventId, _tokenURI));
         bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
         
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(uint256(uint160(backendIssuer)), ethSignedMessageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(0x1, ethSignedMessageHash);
         return abi.encodePacked(r, s, v);
     }
     
@@ -62,12 +62,12 @@ contract BasicMerchTest is Test {
         bytes memory signature = _generateSignature(user1, eventId, tokenURI);
         
         vm.expectEmit(true, true, true, true);
-        emit SBTMinted(user1, 0, eventId, tokenURI);
+        emit SBTMinted(user1, 1, eventId, tokenURI);
         
         uint256 tokenId = basicMerch.mintSBT(user1, eventId, tokenURI, signature);
         
         assertEq(basicMerch.ownerOf(tokenId), user1);
-        assertEq(basicMerch.getCurrentTokenId(), 1);
+        assertEq(basicMerch.getCurrentTokenId(), 2);
         assertEq(basicMerch.balanceOf(user1), 1);
         assertEq(basicMerch.getSBTByEvent(user1, eventId), tokenId);
         assertEq(basicMerch.getEventIdByToken(tokenId), eventId);
@@ -89,7 +89,7 @@ contract BasicMerchTest is Test {
         
         assertEq(basicMerch.ownerOf(tokenId1), user1);
         assertEq(basicMerch.ownerOf(tokenId2), user2);
-        assertEq(basicMerch.getCurrentTokenId(), 2);
+        assertEq(basicMerch.getCurrentTokenId(), 3);
         assertEq(basicMerch.getSBTByEvent(user1, eventId1), tokenId1);
         assertEq(basicMerch.getSBTByEvent(user2, eventId2), tokenId2);
     }
@@ -228,20 +228,21 @@ contract BasicMerchTest is Test {
     
     function testUpgradeE2ELogic() public {
         string memory tokenURI = "ipfs://QmTest";
+        uint256 eventId = 1;
+        bytes memory signature = _generateSignature(user1, eventId, tokenURI);
         
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+        uint256 tokenId = basicMerch.mintSBT(user1, eventId, tokenURI, signature);
         
         vm.deal(user1, 1 ether);
         
         uint256 treasuryBalanceBefore = treasury.balance;
         
         vm.prank(user1);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(tokenId, user2, user1);
         
-        // Verify SBT was burned
-        vm.expectRevert();
-        basicMerch.ownerOf(tokenId);
+        // Verify SBT is retained (not burned)
+        assertEq(basicMerch.ownerOf(tokenId), user1);
+        assertEq(basicMerch.balanceOf(user1), 1);
         
         // Verify Premium NFT was minted
         uint256 premiumId = premiumMerch.getCurrentTokenId() - 1;
@@ -253,33 +254,23 @@ contract BasicMerchTest is Test {
     
     function testDoubleUpgradeFails() public {
         string memory tokenURI = "ipfs://QmTest";
+        uint256 eventId = 1;
+        bytes memory signature = _generateSignature(user1, eventId, tokenURI);
         
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+        uint256 tokenId = basicMerch.mintSBT(user1, eventId, tokenURI, signature);
         
         vm.deal(user1, 1 ether);
         
-        // First upgrade succeeds
+        // First companion mint succeeds
         vm.prank(user1);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(tokenId, user2, user1);
         
-        // Second upgrade should fail
+        // Second companion mint should fail
         vm.prank(user1);
         vm.expectRevert(PremiumMerch.SBTAlreadyUpgraded.selector);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(tokenId, user2, user1);
     }
     
-    function testOnlyOwnerCanSetWhitelist() public {
-        vm.prank(user1);
-        vm.expectRevert();
-        basicMerch.setWhitelistedMinter(user2, true);
-    }
-    
-    function testOnlyOwnerCanSetPremiumContract() public {
-        vm.prank(user1);
-        vm.expectRevert();
-        basicMerch.setPremiumContract(user2);
-    }
     
     function testOnlyOwnerCanSetBaseURI() public {
         vm.prank(user1);

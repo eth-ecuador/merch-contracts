@@ -32,6 +32,9 @@ contract DeployMerchMVP is Script {
     EASIntegration public easIntegration;
     MerchManager public merchManager;
     
+    // Configuration addresses
+    address public backendIssuer;
+    
     function run() external {
         // Get deployer private key from environment
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
@@ -41,7 +44,7 @@ contract DeployMerchMVP is Script {
         address treasury = vm.envOr("TREASURY_ADDRESS", deployer);
         
         // Get backend issuer address for signature verification
-        address backendIssuer = vm.envOr("BACKEND_ISSUER_ADDRESS", deployer);
+        backendIssuer = vm.envOr("BACKEND_ISSUER_ADDRESS", deployer);
         
         // Mock EAS Registry for Base Sepolia (replace with actual if available)
         // For now using deployer address as placeholder
@@ -138,7 +141,8 @@ contract DeployMerchMVP is Script {
         // Check BasicMerch configuration
         console.log("\nBasicMerch Configuration:");
         console.log("  Backend Issuer:", basicMerch.backendIssuer());
-        console.log("  Base URI:", basicMerch._baseURI());
+        // Note: _baseURI() is internal, so we can't access it directly
+        console.log("  Base URI: [Internal function - not accessible]");
         
         if (basicMerch.backendIssuer() == address(0)) {
             console.log("  [ERROR] Backend issuer not set!");

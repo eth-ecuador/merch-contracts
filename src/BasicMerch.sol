@@ -16,7 +16,7 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
     using Strings for uint256;
 
     // State variables
-    uint256 private _tokenIdCounter;
+    uint256 private _tokenIdCounter = 1; // Start from 1 to avoid issues with default mapping values
     string private _baseTokenURI;
     
     // Token URI storage
