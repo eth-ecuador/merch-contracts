@@ -33,12 +33,12 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
     uint256 public organizerSplit; // Basis points (e.g., 6250 = 62.5%)
     uint256 public constant BASIS_POINTS = 10000;
     
-    // Upgrade tracking
+    // Companion tracking
     mapping(uint256 => uint256) public sbtToPremiumMapping; // sbtId => premiumId
-    mapping(uint256 => bool) public upgradedSBTs; // Track which SBTs have been upgraded
+    mapping(uint256 => bool) public upgradedSBTs; // Track which SBTs have been used for companion minting
     
     // Events
-    event SBTUpgraded(address indexed user, uint256 indexed sbtId, uint256 indexed premiumId, uint256 fee);
+    event CompanionMinted(address indexed user, uint256 indexed sbtId, uint256 indexed premiumId, uint256 fee);
     event FeeDistributed(address indexed organizer, uint256 treasuryAmount, uint256 organizerAmount);
     event UpgradeFeeSet(uint256 newFee);
     event TreasurySet(address indexed newTreasury);
@@ -77,13 +77,13 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @dev Upgrade an SBT to a Premium ERC-721 NFT
-     * @param _sbtId The ID of the SBT to upgrade
+     * @dev Mint a Premium ERC-721 NFT companion for an existing SBT
+     * @param _sbtId The ID of the SBT to create a companion for
      * @param _organizer The organizer address to receive the fee split
-     * @param _upgrader The address performing the upgrade (token owner)
-     * @notice Core monetization function - requires fee payment
+     * @param _upgrader The address performing the mint (token owner)
+     * @notice Core monetization function - requires fee payment, SBT is retained
      */
-    function upgradeSBT(uint256 _sbtId, address _organizer, address _upgrader) 
+    function mintCompanion(uint256 _sbtId, address _organizer, address _upgrader) 
         external 
         payable 
         nonReentrant 
@@ -107,18 +107,18 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
             emit ExcessRefunded(_upgrader, refund);
         }
         
-        // Execute upgrade logic
-        _executeUpgrade(_sbtId, _organizer, _upgrader);
+        // Execute companion minting logic
+        _executeMint(_sbtId, _organizer, _upgrader);
     }
 
     /**
-     * @dev Internal function to execute the upgrade process
-     * @param _sbtId The SBT ID being upgraded
+     * @dev Internal function to execute the companion minting process
+     * @param _sbtId The SBT ID being used for companion minting
      * @param _organizer The organizer address
-     * @param _upgrader The address performing the upgrade
+     * @param _upgrader The address performing the mint
      */
-    function _executeUpgrade(uint256 _sbtId, address _organizer, address _upgrader) internal {
-        // 1. Mark SBT as upgraded BEFORE burning (protection against reentrancy)
+    function _executeMint(uint256 _sbtId, address _organizer, address _upgrader) internal {
+        // 1. Mark SBT as used for companion minting (protection against reentrancy)
         upgradedSBTs[_sbtId] = true;
         
         // 2. Mint new Premium NFT to the upgrader
@@ -129,14 +129,11 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
         // 3. Store mapping
         sbtToPremiumMapping[_sbtId] = premiumId;
         
-        // 4. Burn the SBT (after state changes)
-        basicMerchContract.burnSBT(_sbtId);
-        
-        // 5. Distribute fees (interactions last)
+        // 4. Distribute fees (interactions last)
         _distributeFees(_organizer);
         
-        // 6. Emit events
-        emit SBTUpgraded(_upgrader, _sbtId, premiumId, upgradeFee);
+        // 5. Emit events
+        emit CompanionMinted(_upgrader, _sbtId, premiumId, upgradeFee);
     }
 
     /**
@@ -282,11 +279,11 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @dev Check if an SBT has been upgraded
+     * @dev Check if an SBT has been used for companion minting
      * @param _sbtId The SBT ID to check
-     * @return bool True if SBT has been upgraded
+     * @return bool True if SBT has been used for companion minting
      */
-    function isSBTUpgraded(uint256 _sbtId) external view returns (bool) {
+    function isSBTUsedForCompanion(uint256 _sbtId) external view returns (bool) {
         return upgradedSBTs[_sbtId];
     }
 
@@ -300,19 +297,19 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @dev Check if user can upgrade specific SBT
+     * @dev Check if user can mint companion for specific SBT
      * @param _sbtId The SBT ID to check
      * @param _user The user address
-     * @return bool True if can upgrade
+     * @return bool True if can mint companion
      * @return string Reason message
      */
-    function canUpgradeSBT(uint256 _sbtId, address _user) 
+    function canMintCompanion(uint256 _sbtId, address _user) 
         external 
         view 
         returns (bool, string memory) 
     {
         if (upgradedSBTs[_sbtId]) {
-            return (false, "Already upgraded");
+            return (false, "Already used for companion");
         }
         if (!basicMerchContract.isApprovedOrOwner(_user, _sbtId)) {
             return (false, "Not owner");
@@ -320,7 +317,7 @@ contract PremiumMerch is ERC721, Ownable, ReentrancyGuard, Pausable {
         if (paused()) {
             return (false, "Contract paused");
         }
-        return (true, "Can upgrade");
+        return (true, "Can mint companion");
     }
 
     /**

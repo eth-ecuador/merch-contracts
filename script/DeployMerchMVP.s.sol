@@ -40,6 +40,9 @@ contract DeployMerchMVP is Script {
         // Get treasury address (can be same as deployer or different)
         address treasury = vm.envOr("TREASURY_ADDRESS", deployer);
         
+        // Get backend issuer address for signature verification
+        address backendIssuer = vm.envOr("BACKEND_ISSUER_ADDRESS", deployer);
+        
         // Mock EAS Registry for Base Sepolia (replace with actual if available)
         // For now using deployer address as placeholder
         address easRegistry = vm.envOr("EAS_REGISTRY_ADDRESS", deployer);
@@ -49,6 +52,7 @@ contract DeployMerchMVP is Script {
         console.log("===========================================");
         console.log("Deployer:", deployer);
         console.log("Treasury:", treasury);
+        console.log("Backend Issuer:", backendIssuer);
         console.log("EAS Registry:", easRegistry);
         console.log("Upgrade Fee:", UPGRADE_FEE);
         console.log("Treasury Split: %s bps (%s%%)", TREASURY_SPLIT, TREASURY_SPLIT / 100);
@@ -92,30 +96,26 @@ contract DeployMerchMVP is Script {
         console.log("Configuring Contracts");
         console.log("===========================================");
         
-        // Set PremiumMerch as authorized burner in BasicMerch
-        console.log("\n[1/5] Setting PremiumMerch as authorized burner...");
-        basicMerch.setPremiumContract(address(premiumMerch));
-        console.log("  BasicMerch: Premium contract set");
-        
-        // Whitelist MerchManager as minter
-        console.log("\n[2/5] Whitelisting MerchManager as minter...");
-        basicMerch.setWhitelistedMinter(address(merchManager), true);
-        console.log("  BasicMerch: MerchManager whitelisted");
-        
-        // Whitelist deployer as minter (for testing)
-        console.log("\n[3/5] Whitelisting deployer as minter (for testing)...");
-        basicMerch.setWhitelistedMinter(deployer, true);
-        console.log("  BasicMerch: Deployer whitelisted");
+        // Set backend issuer for signature verification
+        console.log("\n[1/4] Setting backend issuer for signature verification...");
+        basicMerch.setBackendIssuer(backendIssuer);
+        console.log("  BasicMerch: Backend issuer set to", backendIssuer);
         
         // Confirm BasicMerch reference in PremiumMerch
-        console.log("\n[4/5] Confirming BasicMerch reference in PremiumMerch...");
+        console.log("\n[2/4] Confirming BasicMerch reference in PremiumMerch...");
         premiumMerch.setBasicMerchContract(address(basicMerch));
         console.log("  PremiumMerch: BasicMerch reference confirmed");
         
         // Transfer ownership of EASIntegration to MerchManager
-        console.log("\n[5/5] Transferring EASIntegration ownership to MerchManager...");
+        console.log("\n[3/4] Transferring EASIntegration ownership to MerchManager...");
         easIntegration.transferOwnership(address(merchManager));
         console.log("  EASIntegration: Ownership transferred to MerchManager");
+        
+        // Set metadata base URIs (optional)
+        console.log("\n[4/4] Setting metadata base URIs...");
+        basicMerch.setBaseURI("https://api.merch.com/metadata/sbt/");
+        premiumMerch.setBaseURI("https://api.merch.com/metadata/premium/");
+        console.log("  Metadata base URIs set");
         
         vm.stopBroadcast();
         
@@ -137,16 +137,11 @@ contract DeployMerchMVP is Script {
         
         // Check BasicMerch configuration
         console.log("\nBasicMerch Configuration:");
-        console.log("  Premium Contract:", basicMerch.premiumMerchContract());
-        console.log("  MerchManager Whitelisted:", basicMerch.isWhitelistedMinter(address(merchManager)));
-        console.log("  Deployer Whitelisted:", basicMerch.isWhitelistedMinter(deployer));
+        console.log("  Backend Issuer:", basicMerch.backendIssuer());
+        console.log("  Base URI:", basicMerch._baseURI());
         
-        if (basicMerch.premiumMerchContract() != address(premiumMerch)) {
-            console.log("  [ERROR] Premium contract not set correctly!");
-            allGood = false;
-        }
-        if (!basicMerch.isWhitelistedMinter(address(merchManager))) {
-            console.log("  [ERROR] MerchManager not whitelisted!");
+        if (basicMerch.backendIssuer() == address(0)) {
+            console.log("  [ERROR] Backend issuer not set!");
             allGood = false;
         }
         
@@ -211,28 +206,31 @@ contract DeployMerchMVP is Script {
         console.log("===========================================");
         console.log("\nQuick Test Commands:");
         console.log("-------------------------------------------");
-        console.log("# Register an event");
-        console.log("cast send", vm.toString(address(merchManager)), "\\");
-        console.log("  'registerEvent(bytes32,string)' \\");
-        console.log("  $(cast keccak 'TestEvent2025') \\");
-        console.log("  'Test Event 2025' \\");
+        console.log("# Mint a test SBT with signature");
+        console.log("cast send", vm.toString(address(basicMerch)), "\\");
+        console.log("  'mintSBT(address,uint256,string,bytes)' \\");
+        console.log("  ", deployer, " \\");
+        console.log("  1 \\");
+        console.log("  'ipfs://QmTest' \\");
+        console.log("  '0x<signature_from_backend_issuer>' \\");
         console.log("  --rpc-url $BASE_SEPOLIA_RPC_URL \\");
         console.log("  --private-key $PRIVATE_KEY");
-        console.log("\n# Mint a test SBT");
-        console.log("cast send", vm.toString(address(merchManager)), "\\");
-        console.log("  'mintSBTWithAttestation(address,string,bytes32)' \\");
+        console.log("\n# Mint companion for SBT");
+        console.log("cast send", vm.toString(address(premiumMerch)), "\\");
+        console.log("  'mintCompanion(uint256,address,address)' \\");
+        console.log("  0 \\");
         console.log("  ", deployer, " \\");
-        console.log("  'ipfs://QmTest' \\");
-        console.log("  $(cast keccak 'TestEvent2025') \\");
+        console.log("  ", deployer, " \\");
+        console.log("  --value 0.001ether \\");
         console.log("  --rpc-url $BASE_SEPOLIA_RPC_URL \\");
         console.log("  --private-key $PRIVATE_KEY");
         console.log("===========================================");
         console.log("\nNext Steps:");
         console.log("1. Verify contracts on BaseScan (see verify-contracts.sh)");
-        console.log("2. Register your first event using MerchManager");
-        console.log("3. Set up backend to interact with MerchManager");
-        console.log("4. Configure metadata base URIs");
-        console.log("5. Test the full flow: mint SBT -> upgrade to Premium");
+        console.log("2. Set up backend to generate signatures for SBT minting");
+        console.log("3. Configure metadata base URIs if needed");
+        console.log("4. Test the full flow: mint SBT -> mint companion (SBT retained)");
+        console.log("5. Set up EAS attestations for attendance tracking");
         console.log("===========================================");
     }
     
@@ -243,6 +241,7 @@ contract DeployMerchMVP is Script {
             '  "chainId": 84532,\n',
             '  "deployer": "', vm.toString(deployer), '",\n',
             '  "treasury": "', vm.toString(treasury), '",\n',
+            '  "backendIssuer": "', vm.toString(backendIssuer), '",\n',
             '  "timestamp": ', vm.toString(block.timestamp), ',\n',
             '  "contracts": {\n',
             '    "basicMerch": "', vm.toString(address(basicMerch)), '",\n',
@@ -253,7 +252,9 @@ contract DeployMerchMVP is Script {
             '  "configuration": {\n',
             '    "upgradeFee": "', vm.toString(UPGRADE_FEE), '",\n',
             '    "treasurySplit": ', vm.toString(TREASURY_SPLIT), ',\n',
-            '    "organizerSplit": ', vm.toString(ORGANIZER_SPLIT), '\n',
+            '    "organizerSplit": ', vm.toString(ORGANIZER_SPLIT), ',\n',
+            '    "signatureBasedMinting": true,\n',
+            '    "sbtRetention": true\n',
             '  }\n',
             '}'
         ));
