@@ -10,13 +10,13 @@ contract PremiumMerchTest is Test {
     PremiumMerch public premiumMerch;
     
     address public owner;
-    address public minter;
+    address public backendIssuer;
     address public user1;
     address public user2;
     address public treasury;
     
     // Events
-    event SBTUpgraded(address indexed user, uint256 indexed sbtId, uint256 indexed premiumId, uint256 fee);
+    event CompanionMinted(address indexed user, uint256 indexed sbtId, uint256 indexed premiumId, uint256 fee);
     event FeeDistributed(address indexed organizer, uint256 treasuryAmount, uint256 organizerAmount);
     event ExcessRefunded(address indexed user, uint256 amount);
     event UpgradeFeeSet(uint256 newFee);
@@ -25,7 +25,7 @@ contract PremiumMerchTest is Test {
     
     function setUp() public {
         owner = address(this);
-        minter = makeAddr("minter");
+        backendIssuer = vm.addr(0x1); // Use a known private key
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
         treasury = makeAddr("treasury");
@@ -39,9 +39,31 @@ contract PremiumMerchTest is Test {
             0.01 ether
         );
         
-        basicMerch.setPremiumContract(address(premiumMerch));
-        premiumMerch.setBasicMerchContract(address(basicMerch));
-        basicMerch.setWhitelistedMinter(minter, true);
+        basicMerch.setBackendIssuer(backendIssuer);
+    }
+    
+    /**
+     * @dev Helper function to generate signature for minting
+     */
+    function _generateSignature(
+        address _to,
+        uint256 _eventId,
+        string memory _tokenURI
+    ) internal view returns (bytes memory) {
+        bytes32 messageHash = keccak256(abi.encodePacked(_to, _eventId, _tokenURI));
+        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+        
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(0x1, ethSignedMessageHash);
+        return abi.encodePacked(r, s, v);
+    }
+    
+    /**
+     * @dev Helper function to mint an SBT for testing
+     */
+    function _mintSBT(address _to, uint256 _eventId) internal returns (uint256) {
+        string memory tokenURI = "ipfs://QmTest";
+        bytes memory signature = _generateSignature(_to, _eventId, tokenURI);
+        return basicMerch.mintSBT(_to, _eventId, tokenURI, signature);
     }
     
     function testInitialConfiguration() public {
@@ -52,11 +74,9 @@ contract PremiumMerchTest is Test {
         assertEq(address(premiumMerch.basicMerchContract()), address(basicMerch));
     }
     
-    function testUpgradeSuccess() public {
-        string memory tokenURI = "ipfs://QmTest";
-        
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+    function testMintCompanionSuccess() public {
+        uint256 eventId = 1;
+        uint256 sbtId = _mintSBT(user1, eventId);
         
         vm.deal(user1, 1 ether);
         
@@ -64,18 +84,23 @@ contract PremiumMerchTest is Test {
         uint256 organizerBalanceBefore = user2.balance;
         
         vm.expectEmit(true, true, true, true);
-        emit SBTUpgraded(user1, tokenId, 0, 0.01 ether);
+        emit CompanionMinted(user1, sbtId, 1, 0.01 ether);
         
         vm.prank(user1);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(sbtId, user2, user1);
         
-        // Verify SBT burned
-        vm.expectRevert();
-        basicMerch.ownerOf(tokenId);
+        // Verify SBT is RETAINED (not burned)
+        assertEq(basicMerch.ownerOf(sbtId), user1);
+        assertEq(basicMerch.balanceOf(user1), 1);
         
         // Verify Premium minted
         uint256 premiumId = premiumMerch.getCurrentTokenId() - 1;
         assertEq(premiumMerch.ownerOf(premiumId), user1);
+        assertEq(premiumMerch.balanceOf(user1), 1);
+        
+        // Verify user has BOTH tokens
+        assertEq(basicMerch.balanceOf(user1), 1); // SBT retained
+        assertEq(premiumMerch.balanceOf(user1), 1); // Premium minted
         
         // Verify fee split (37.5% / 62.5%)
         uint256 expectedTreasuryAmount = (0.01 ether * 3750) / 10000;
@@ -85,15 +110,13 @@ contract PremiumMerchTest is Test {
         assertEq(user2.balance - organizerBalanceBefore, expectedOrganizerAmount);
         
         // Verify mapping
-        assertEq(premiumMerch.getPremiumTokenId(tokenId), premiumId);
-        assertTrue(premiumMerch.isSBTUpgraded(tokenId));
+        assertEq(premiumMerch.getPremiumTokenId(sbtId), premiumId);
+        assertTrue(premiumMerch.isSBTUsedForCompanion(sbtId));
     }
     
-    function testUpgradeWithExcessRefund() public {
-        string memory tokenURI = "ipfs://QmTest";
-        
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+    function testMintCompanionWithExcessRefund() public {
+        uint256 eventId = 1;
+        uint256 sbtId = _mintSBT(user1, eventId);
         
         vm.deal(user1, 1 ether);
         
@@ -104,73 +127,69 @@ contract PremiumMerchTest is Test {
         emit ExcessRefunded(user1, excessAmount);
         
         vm.prank(user1);
-        premiumMerch.upgradeSBT{value: 0.015 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.015 ether}(sbtId, user2, user1);
         
         // Verify user got refund
         assertEq(user1.balance, user1BalanceBefore - 0.01 ether);
+        
+        // Verify SBT is RETAINED
+        assertEq(basicMerch.ownerOf(sbtId), user1);
+        assertEq(basicMerch.balanceOf(user1), 1);
     }
     
-    function testUpgradeInsufficientFeeFails() public {
-        string memory tokenURI = "ipfs://QmTest";
-        
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+    function testMintCompanionInsufficientFeeFails() public {
+        uint256 eventId = 1;
+        uint256 sbtId = _mintSBT(user1, eventId);
         
         vm.deal(user1, 1 ether);
         
         vm.prank(user1);
         vm.expectRevert(PremiumMerch.InsufficientFee.selector);
-        premiumMerch.upgradeSBT{value: 0.005 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.005 ether}(sbtId, user2, user1);
     }
     
-    function testUpgradeNotOwnerFails() public {
-        string memory tokenURI = "ipfs://QmTest";
-        
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+    function testMintCompanionNotOwnerFails() public {
+        uint256 eventId = 1;
+        uint256 sbtId = _mintSBT(user1, eventId);
         
         vm.deal(user2, 1 ether);
         
         vm.prank(user2);
         vm.expectRevert(PremiumMerch.SBTNotOwned.selector);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user2);
+        premiumMerch.mintCompanion{value: 0.01 ether}(sbtId, user2, user2);
     }
     
-    function testUpgradeZeroOrganizerFails() public {
-        string memory tokenURI = "ipfs://QmTest";
-        
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+    function testMintCompanionZeroOrganizerFails() public {
+        uint256 eventId = 1;
+        uint256 sbtId = _mintSBT(user1, eventId);
         
         vm.deal(user1, 1 ether);
         
         vm.prank(user1);
         vm.expectRevert(PremiumMerch.InvalidAddress.selector);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, address(0), user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(sbtId, address(0), user1);
     }
     
-    function testDoubleUpgradeFails() public {
-        string memory tokenURI = "ipfs://QmTest";
-        
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+    function testDoubleMintCompanionFails() public {
+        uint256 eventId = 1;
+        uint256 sbtId = _mintSBT(user1, eventId);
         
         vm.deal(user1, 1 ether);
         
         vm.prank(user1);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(sbtId, user2, user1);
         
         vm.prank(user1);
         vm.expectRevert(PremiumMerch.SBTAlreadyUpgraded.selector);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(sbtId, user2, user1);
     }
     
-    function testUpgradeNonExistentSBTFails() public {
+    function testMintCompanionNonExistentSBTFails() public {
         vm.deal(user1, 1 ether);
         
         vm.prank(user1);
         vm.expectRevert(PremiumMerch.SBTNotOwned.selector);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(999, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(999, user2, user1);
     }
     
     function testSetUpgradeFee() public {
@@ -234,11 +253,12 @@ contract PremiumMerchTest is Test {
         assertFalse(premiumMerch.paused());
     }
     
-    function testUpgradeWhilePausedFails() public {
+    function testMintCompanionWhilePausedFails() public {
         string memory tokenURI = "ipfs://QmTest";
+        uint256 eventId = 1;
+        bytes memory signature = _generateSignature(user1, eventId, tokenURI);
         
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+        uint256 tokenId = _mintSBT(user1, eventId);
         
         vm.deal(user1, 1 ether);
         
@@ -246,62 +266,66 @@ contract PremiumMerchTest is Test {
         
         vm.prank(user1);
         vm.expectRevert();
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(tokenId, user2, user1);
     }
     
-    function testCanUpgradeSBT() public {
+    function testCanMintCompanion() public {
         string memory tokenURI = "ipfs://QmTest";
+        uint256 eventId = 1;
+        bytes memory signature = _generateSignature(user1, eventId, tokenURI);
         
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+        uint256 tokenId = _mintSBT(user1, eventId);
         
-        (bool canUpgrade, string memory reason) = premiumMerch.canUpgradeSBT(tokenId, user1);
-        assertTrue(canUpgrade);
-        assertEq(reason, "Can upgrade");
+        (bool canMint, string memory reason) = premiumMerch.canMintCompanion(tokenId, user1);
+        assertTrue(canMint);
+        assertEq(reason, "Can mint companion");
         
-        // Test after upgrade
+        // Test after companion mint
         vm.deal(user1, 1 ether);
         vm.prank(user1);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(tokenId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(tokenId, user2, user1);
         
-        (canUpgrade, reason) = premiumMerch.canUpgradeSBT(tokenId, user1);
-        assertFalse(canUpgrade);
-        assertEq(reason, "Already upgraded");
+        (canMint, reason) = premiumMerch.canMintCompanion(tokenId, user1);
+        assertFalse(canMint);
+        assertEq(reason, "Already used for companion");
     }
     
-    function testCanUpgradeSBTNotOwner() public {
+    function testCanMintCompanionNotOwner() public {
         string memory tokenURI = "ipfs://QmTest";
+        uint256 eventId = 1;
+        bytes memory signature = _generateSignature(user1, eventId, tokenURI);
         
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+        uint256 tokenId = _mintSBT(user1, eventId);
         
-        (bool canUpgrade, string memory reason) = premiumMerch.canUpgradeSBT(tokenId, user2);
-        assertFalse(canUpgrade);
+        (bool canMint, string memory reason) = premiumMerch.canMintCompanion(tokenId, user2);
+        assertFalse(canMint);
         assertEq(reason, "Not owner");
     }
     
-    function testCanUpgradeSBTWhilePaused() public {
+    function testCanMintCompanionWhilePaused() public {
         string memory tokenURI = "ipfs://QmTest";
+        uint256 eventId = 1;
+        bytes memory signature = _generateSignature(user1, eventId, tokenURI);
         
-        vm.prank(minter);
-        uint256 tokenId = basicMerch.mintSBT(user1, tokenURI);
+        uint256 tokenId = _mintSBT(user1, eventId);
         
         premiumMerch.pause();
         
-        (bool canUpgrade, string memory reason) = premiumMerch.canUpgradeSBT(tokenId, user1);
-        assertFalse(canUpgrade);
+        (bool canMint, string memory reason) = premiumMerch.canMintCompanion(tokenId, user1);
+        assertFalse(canMint);
         assertEq(reason, "Contract paused");
     }
     
     function testSetTokenURI() public {
         string memory tokenURI = "ipfs://QmTest";
+        uint256 eventId = 1;
+        bytes memory signature = _generateSignature(user1, eventId, tokenURI);
         
-        vm.prank(minter);
-        uint256 sbtId = basicMerch.mintSBT(user1, tokenURI);
+        uint256 sbtId = _mintSBT(user1, eventId);
         
         vm.deal(user1, 1 ether);
         vm.prank(user1);
-        premiumMerch.upgradeSBT{value: 0.01 ether}(sbtId, user2, user1);
+        premiumMerch.mintCompanion{value: 0.01 ether}(sbtId, user2, user1);
         
         uint256 premiumId = premiumMerch.getCurrentTokenId() - 1;
         

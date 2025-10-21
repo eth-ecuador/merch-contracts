@@ -16,95 +16,123 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
     using Strings for uint256;
 
     // State variables
-    uint256 private _tokenIdCounter;
+    uint256 private _tokenIdCounter = 1; // Start from 1 to avoid issues with default mapping values
     string private _baseTokenURI;
     
     // Token URI storage
     mapping(uint256 => string) private _tokenURIs;
     
-    // Access control
-    mapping(address => bool) public whitelistedMinters;
-    address public premiumMerchContract;
+    // Signature-based access control
+    address public backendIssuer;
+    
+    // Event tracking
+    mapping(address => mapping(uint256 => uint256)) public userEventToTokenId; // user => eventId => tokenId
+    mapping(uint256 => uint256) public tokenIdToEventId; // tokenId => eventId
     
     // Events
-    event SBTMinted(address indexed to, uint256 indexed tokenId, string tokenURI);
-    event SBTBurned(uint256 indexed tokenId);
-    event MinterWhitelisted(address indexed minter, bool status);
-    event PremiumContractSet(address indexed premiumContract);
+    event SBTMinted(address indexed to, uint256 indexed tokenId, uint256 indexed eventId, string tokenURI);
+    event BackendIssuerSet(address indexed issuer);
     event BaseURISet(string newBaseURI);
     event TokenURISet(uint256 indexed tokenId, string tokenURI);
 
     // Errors
-    error NotWhitelistedMinter();
-    error NotPremiumContract();
-    error TokenDoesNotExist();
-    error TransferNotAllowed();
+    error InvalidSignature();
     error InvalidAddress();
     error EmptyTokenURI();
+    error TokenDoesNotExist();
+    error TransferNotAllowed();
+    error DuplicateEventMint();
+    error InvalidEventId();
 
     constructor(string memory name, string memory symbol) ERC721(name, symbol) Ownable(msg.sender) {}
 
     /**
-     * @dev Modifier to check if caller is whitelisted minter
+     * @dev Verify signature from backend issuer
      */
-    modifier onlyWhitelistedMinter() {
-        if (!whitelistedMinters[msg.sender]) {
-            revert NotWhitelistedMinter();
+    function _verifySignature(
+        address _to,
+        uint256 _eventId,
+        string memory _tokenURI,
+        bytes memory _signature
+    ) internal view returns (bool) {
+        bytes32 messageHash = keccak256(abi.encodePacked(_to, _eventId, _tokenURI));
+        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+        
+        if (_signature.length != 65) return false;
+        
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        
+        assembly {
+            r := mload(add(_signature, 32))
+            s := mload(add(_signature, 64))
+            v := byte(0, mload(add(_signature, 96)))
         }
-        _;
+        
+        if (v < 27) {
+            v += 27;
+        }
+        
+        address signer = ecrecover(ethSignedMessageHash, v, r, s);
+        return signer == backendIssuer;
     }
 
     /**
-     * @dev Modifier to check if caller is premium merch contract
-     */
-    modifier onlyPremiumContract() {
-        if (msg.sender != premiumMerchContract) {
-            revert NotPremiumContract();
-        }
-        _;
-    }
-
-    /**
-     * @dev Mint a new SBT to the specified address
+     * @dev Mint a new SBT to the specified address with signature verification
      * @param _to The address to mint the SBT to
+     * @param _eventId The event ID for this attendance
      * @param _tokenURI The metadata URI for the token
-     * @notice Only callable by whitelisted minters (e.g., Backend API/Minter Role)
+     * @param _signature The signature from the backend issuer
+     * @notice Public function that requires valid signature from backend issuer
      */
-    function mintSBT(address _to, string memory _tokenURI) 
+    function mintSBT(
+        address _to, 
+        uint256 _eventId, 
+        string memory _tokenURI, 
+        bytes memory _signature
+    ) 
         external 
-        onlyWhitelistedMinter 
         nonReentrant 
         returns (uint256) 
     {
         if (_to == address(0)) revert InvalidAddress();
+        if (_eventId == 0) revert InvalidEventId();
         if (bytes(_tokenURI).length == 0) revert EmptyTokenURI();
+        if (backendIssuer == address(0)) revert InvalidAddress();
+        
+        // Check for duplicate event minting
+        if (userEventToTokenId[_to][_eventId] != 0) {
+            revert DuplicateEventMint();
+        }
+        
+        // Verify signature
+        if (!_verifySignature(_to, _eventId, _tokenURI, _signature)) {
+            revert InvalidSignature();
+        }
 
         uint256 tokenId = _tokenIdCounter;
         _tokenIdCounter++;
 
         _safeMint(_to, tokenId);
         _setTokenURI(tokenId, _tokenURI);
+        
+        // Store event tracking
+        userEventToTokenId[_to][_eventId] = tokenId;
+        tokenIdToEventId[tokenId] = _eventId;
 
-        emit SBTMinted(_to, tokenId, _tokenURI);
+        emit SBTMinted(_to, tokenId, _eventId, _tokenURI);
         return tokenId;
     }
 
     /**
-     * @dev Burn an SBT during the upgrade process
-     * @param _tokenId The ID of the token to burn
-     * @notice Only callable by the PremiumMerch contract
+     * @dev Get SBT token ID for a specific user and event
+     * @param _owner The owner address
+     * @param _eventId The event ID
+     * @return uint256 The token ID (0 if not found)
      */
-    function burnSBT(uint256 _tokenId) external onlyPremiumContract {
-        if (!_exists(_tokenId)) {
-            revert TokenDoesNotExist();
-        }
-
-        // Clear token URI to free storage
-        delete _tokenURIs[_tokenId];
-        
-        _burn(_tokenId);
-        
-        emit SBTBurned(_tokenId);
+    function getSBTByEvent(address _owner, uint256 _eventId) external view returns (uint256) {
+        return userEventToTokenId[_owner][_eventId];
     }
 
     /**
@@ -144,12 +172,7 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
             return super._update(to, tokenId, auth);
         }
         
-        // Allow burning (to == address(0)) - only by premium contract
-        if (to == address(0) && msg.sender == premiumMerchContract) {
-            return super._update(to, tokenId, auth);
-        }
-        
-        // Revert all other transfers
+        // Revert all transfers (SBTs are permanent)
         revert TransferNotAllowed();
     }
 
@@ -207,24 +230,13 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Add or remove a whitelisted minter
-     * @param _minter The address to whitelist/unwhitelist
-     * @param _status True to whitelist, false to remove
+     * @dev Set the backend issuer address for signature verification
+     * @param _issuer The address of the backend issuer
      */
-    function setWhitelistedMinter(address _minter, bool _status) external onlyOwner {
-        if (_minter == address(0)) revert InvalidAddress();
-        whitelistedMinters[_minter] = _status;
-        emit MinterWhitelisted(_minter, _status);
-    }
-
-    /**
-     * @dev Set the premium merch contract address
-     * @param _premiumContract The address of the premium merch contract
-     */
-    function setPremiumContract(address _premiumContract) external onlyOwner {
-        if (_premiumContract == address(0)) revert InvalidAddress();
-        premiumMerchContract = _premiumContract;
-        emit PremiumContractSet(_premiumContract);
+    function setBackendIssuer(address _issuer) external onlyOwner {
+        if (_issuer == address(0)) revert InvalidAddress();
+        backendIssuer = _issuer;
+        emit BackendIssuerSet(_issuer);
     }
 
     /**
@@ -245,11 +257,11 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Check if a minter is whitelisted
-     * @param _minter The address to check
-     * @return bool True if minter is whitelisted
+     * @dev Get the event ID for a specific token
+     * @param _tokenId The token ID
+     * @return uint256 The event ID
      */
-    function isWhitelistedMinter(address _minter) external view returns (bool) {
-        return whitelistedMinters[_minter];
+    function getEventIdByToken(uint256 _tokenId) external view returns (uint256) {
+        return tokenIdToEventId[_tokenId];
     }
 }

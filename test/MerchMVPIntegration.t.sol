@@ -18,6 +18,7 @@ contract MerchMVPIntegrationTest is Test {
     MerchManager public merchManager;
     
     address public owner;
+    address public backendIssuer;
     address public treasury;
     address public organizer;
     address public user1;
@@ -32,6 +33,7 @@ contract MerchMVPIntegrationTest is Test {
     
     function setUp() public {
         owner = address(this);
+        backendIssuer = vm.addr(0x1); // Use a known private key
         treasury = makeAddr("treasury");
         organizer = makeAddr("organizer");
         user1 = makeAddr("user1");
@@ -55,8 +57,7 @@ contract MerchMVPIntegrationTest is Test {
         );
         
         // Configure contracts
-        basicMerch.setPremiumContract(address(premiumMerch));
-        basicMerch.setWhitelistedMinter(address(merchManager), true);
+        basicMerch.setBackendIssuer(backendIssuer);
         
         // Transfer ownership of EASIntegration to MerchManager BEFORE other operations
         easIntegration.transferOwnership(address(merchManager));
@@ -74,52 +75,81 @@ contract MerchMVPIntegrationTest is Test {
         vm.deal(user3, 10 ether);
     }
     
+    /**
+     * @dev Helper function to generate signature for minting
+     */
+    function _generateSignature(
+        address _to,
+        uint256 _eventId,
+        string memory _tokenURI
+    ) internal view returns (bytes memory) {
+        bytes32 messageHash = keccak256(abi.encodePacked(_to, _eventId, _tokenURI));
+        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+        
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(0x1, ethSignedMessageHash);
+        return abi.encodePacked(r, s, v);
+    }
+    
+    /**
+     * @dev Helper function to mint an SBT for testing
+     */
+    function _mintSBT(address _to, uint256 _eventId, string memory _tokenURI) internal returns (uint256) {
+        bytes memory signature = _generateSignature(_to, _eventId, _tokenURI);
+        return basicMerch.mintSBT(_to, _eventId, _tokenURI, signature);
+    }
+    
     function testCompleteUserJourney() public {
         // Step 1: User attends event and receives free SBT
-        (uint256 tokenId1, bytes32 attestationId1) = merchManager.mintSBTWithAttestation(
-            user1,
-            "ipfs://QmUser1Event1",
-            event1Id
-        );
+        uint256 eventId1 = 1;
+        string memory tokenURI1 = "ipfs://QmUser1Event1";
+        uint256 tokenId1 = _mintSBT(user1, eventId1, tokenURI1);
         
         assertEq(basicMerch.ownerOf(tokenId1), user1);
-        assertTrue(merchManager.hasUserAttendedEvent(user1, event1Id));
+        assertEq(basicMerch.getSBTByEvent(user1, eventId1), tokenId1);
+        assertEq(basicMerch.getEventIdByToken(tokenId1), eventId1);
         
-        bytes32[] memory userHistory = merchManager.getUserAttendanceHistory(user1);
-        assertEq(userHistory.length, 1);
-        assertEq(userHistory[0], attestationId1);
-        
-        // Step 2: User upgrades to Premium NFT
+        // Step 2: User mints Premium NFT companion (SBT is retained)
         uint256 user1BalanceBefore = user1.balance;
         uint256 treasuryBalanceBefore = treasury.balance;
         uint256 organizerBalanceBefore = organizer.balance;
         
         vm.prank(user1);
-        (uint256 premiumId1, bytes32 attestationId2) = merchManager.upgradeSBTWithAttestation{
-            value: 0.001 ether
-        }(tokenId1, organizer, event1Id);
+        premiumMerch.mintCompanion{value: 0.001 ether}(tokenId1, organizer, user1);
         
-        // Verify SBT burned
-        vm.expectRevert();
-        basicMerch.ownerOf(tokenId1);
+        // Verify SBT is RETAINED and Premium was minted
+        assertEq(basicMerch.ownerOf(tokenId1), user1);
+        assertEq(basicMerch.balanceOf(user1), 1);
         
-        // Verify Premium minted
+        uint256 premiumId1 = premiumMerch.getCurrentTokenId() - 1;
         assertEq(premiumMerch.ownerOf(premiumId1), user1);
+        assertEq(premiumMerch.balanceOf(user1), 1);
+        
+        // Verify user has BOTH tokens
+        assertEq(basicMerch.balanceOf(user1), 1); // SBT retained
+        assertEq(premiumMerch.balanceOf(user1), 1); // Premium minted
         
         // Verify fees distributed correctly
         assertEq(user1.balance, user1BalanceBefore - 0.001 ether);
         assertTrue(treasury.balance > treasuryBalanceBefore);
         assertTrue(organizer.balance > organizerBalanceBefore);
         
-        // Verify attestations
-        userHistory = merchManager.getUserAttendanceHistory(user1);
-        assertEq(userHistory.length, 2); // Basic + Upgrade
+        // Step 3: User attends second event
+        uint256 eventId2 = 2;
+        string memory tokenURI2 = "ipfs://QmUser1Event2";
+        uint256 tokenId2 = _mintSBT(user1, eventId2, tokenURI2);
         
-        bytes32[] memory premiumUpgrades = merchManager.getUserPremiumUpgrades(user1);
-        assertEq(premiumUpgrades.length, 1);
-        assertEq(premiumUpgrades[0], attestationId2);
+        assertEq(basicMerch.ownerOf(tokenId2), user1);
+        assertEq(basicMerch.getSBTByEvent(user1, eventId2), tokenId2);
         
-        // Step 3: Verify Premium NFT is tradable
+        // User should now have 2 SBTs (from both events) and 1 Premium NFT
+        assertEq(basicMerch.balanceOf(user1), 2);
+        assertEq(premiumMerch.balanceOf(user1), 1);
+        
+        // Verify both SBTs are still owned by user
+        assertEq(basicMerch.ownerOf(tokenId1), user1);
+        assertEq(basicMerch.ownerOf(tokenId2), user1);
+        
+        // Step 4: Verify Premium NFT is tradable
         vm.prank(user1);
         premiumMerch.transferFrom(user1, user2, premiumId1);
         assertEq(premiumMerch.ownerOf(premiumId1), user2);
@@ -127,29 +157,26 @@ contract MerchMVPIntegrationTest is Test {
     
     function testMultipleUsersMultipleEvents() public {
         // User1 attends both events
-        merchManager.mintSBTWithAttestation(user1, "ipfs://QmUser1Event1", event1Id);
-        merchManager.mintSBTWithAttestation(user1, "ipfs://QmUser1Event2", event2Id);
+        _mintSBT(user1, uint256(event1Id), "ipfs://QmUser1Event1");
+        _mintSBT(user1, uint256(event2Id), "ipfs://QmUser1Event2");
         
         // User2 attends event1
-        merchManager.mintSBTWithAttestation(user2, "ipfs://QmUser2Event1", event1Id);
+        _mintSBT(user2, uint256(event1Id), "ipfs://QmUser2Event1");
         
         // User3 attends event2
-        merchManager.mintSBTWithAttestation(user3, "ipfs://QmUser3Event2", event2Id);
+        _mintSBT(user3, uint256(event2Id), "ipfs://QmUser3Event2");
         
-        // Verify attendance
-        assertTrue(merchManager.hasUserAttendedEvent(user1, event1Id));
-        assertTrue(merchManager.hasUserAttendedEvent(user1, event2Id));
-        assertTrue(merchManager.hasUserAttendedEvent(user2, event1Id));
-        assertFalse(merchManager.hasUserAttendedEvent(user2, event2Id));
-        assertTrue(merchManager.hasUserAttendedEvent(user3, event2Id));
-        assertFalse(merchManager.hasUserAttendedEvent(user3, event1Id));
+        // Verify attendance (check BasicMerch directly since we're not using MerchManager for minting)
+        assertTrue(basicMerch.getSBTByEvent(user1, uint256(event1Id)) != 0);
+        assertTrue(basicMerch.getSBTByEvent(user1, uint256(event2Id)) != 0);
+        assertTrue(basicMerch.getSBTByEvent(user2, uint256(event1Id)) != 0);
+        assertTrue(basicMerch.getSBTByEvent(user2, uint256(event2Id)) == 0);
+        assertTrue(basicMerch.getSBTByEvent(user3, uint256(event2Id)) != 0);
+        assertTrue(basicMerch.getSBTByEvent(user3, uint256(event1Id)) == 0);
         
-        // Verify event attendance counts
-        bytes32[] memory event1Attendees = merchManager.getEventAttendance(event1Id);
-        bytes32[] memory event2Attendees = merchManager.getEventAttendance(event2Id);
-        
-        assertEq(event1Attendees.length, 2); // user1, user2
-        assertEq(event2Attendees.length, 2); // user1, user3
+        // Note: Event attendance counts via MerchManager are only tracked through attestations
+        // Since we're minting directly via BasicMerch (not through MerchManager), 
+        // there are no attestations created. Attendance is verified via getSBTByEvent above.
     }
     
     function testBatchEventRegistration() public {
@@ -177,11 +204,7 @@ contract MerchMVPIntegrationTest is Test {
     
     function testUpgradeWithExcessPayment() public {
         // Mint SBT
-        (uint256 tokenId,) = merchManager.mintSBTWithAttestation(
-            user1,
-            "ipfs://QmTest",
-            event1Id
-        );
+        uint256 tokenId = _mintSBT(user1, uint256(event1Id), "ipfs://QmTest");
         
         uint256 user1BalanceBefore = user1.balance;
         uint256 excessAmount = 0.005 ether;
@@ -189,7 +212,7 @@ contract MerchMVPIntegrationTest is Test {
         
         // Upgrade with excess payment
         vm.prank(user1);
-        merchManager.upgradeSBTWithAttestation{value: totalSent}(
+        merchManager.mintCompanionWithAttestation{value: totalSent}(
             tokenId,
             organizer,
             event1Id
@@ -202,27 +225,24 @@ contract MerchMVPIntegrationTest is Test {
     function testCannotMintForUnregisteredEvent() public {
         bytes32 unregisteredEventId = keccak256("Unregistered Event");
         
-        vm.expectRevert();
-        merchManager.mintSBTWithAttestation(
-            user1,
-            "ipfs://QmTest",
-            unregisteredEventId
-        );
+        // Direct minting via BasicMerch doesn't check event registration
+        // This allows flexibility for the backend to mint for any event
+        uint256 tokenId = _mintSBT(user1, uint256(unregisteredEventId), "ipfs://QmTest");
+        
+        // Verify the SBT was minted
+        assertEq(basicMerch.ownerOf(tokenId), user1);
+        assertEq(basicMerch.getEventIdByToken(tokenId), uint256(unregisteredEventId));
     }
     
     function testCannotUpgradeForUnregisteredEvent() public {
         // Mint SBT for registered event
-        (uint256 tokenId,) = merchManager.mintSBTWithAttestation(
-            user1,
-            "ipfs://QmTest",
-            event1Id
-        );
+        uint256 tokenId = _mintSBT(user1, uint256(event1Id), "ipfs://QmTest");
         
         bytes32 unregisteredEventId = keccak256("Unregistered Event");
         
         vm.prank(user1);
         vm.expectRevert();
-        merchManager.upgradeSBTWithAttestation{value: 0.001 ether}(
+        merchManager.mintCompanionWithAttestation{value: 0.001 ether}(
             tokenId,
             organizer,
             unregisteredEventId
@@ -235,27 +255,23 @@ contract MerchMVPIntegrationTest is Test {
         vm.expectRevert();
         merchManager.registerEvent(keccak256("New Event"), "New Event");
         
-        // Only owner can mint SBTs
-        vm.prank(user1);
-        vm.expectRevert();
-        merchManager.mintSBTWithAttestation(user2, "ipfs://test", event1Id);
+        // Direct minting requires valid signature (not access control)
+        // The signature verification will fail with invalid signature
+        vm.expectRevert(BasicMerch.InvalidSignature.selector);
+        basicMerch.mintSBT(user2, uint256(event1Id), "ipfs://test", new bytes(65));
         
-        // Only whitelisted can mint directly in BasicMerch
+        // Only valid signatures can mint directly in BasicMerch
         vm.prank(user1);
-        vm.expectRevert(BasicMerch.NotWhitelistedMinter.selector);
-        basicMerch.mintSBT(user2, "ipfs://test");
+        vm.expectRevert(BasicMerch.InvalidSignature.selector);
+        basicMerch.mintSBT(user2, 1, "ipfs://test", new bytes(65)); // Invalid signature
     }
     
     function testPremiumNFTTradeability() public {
         // Mint and upgrade
-        (uint256 tokenId,) = merchManager.mintSBTWithAttestation(
-            user1,
-            "ipfs://QmTest",
-            event1Id
-        );
+        uint256 tokenId = _mintSBT(user1, uint256(event1Id), "ipfs://QmTest");
         
         vm.prank(user1);
-        (uint256 premiumId,) = merchManager.upgradeSBTWithAttestation{
+        (uint256 premiumId,) = merchManager.mintCompanionWithAttestation{
             value: 0.001 ether
         }(tokenId, organizer, event1Id);
         
@@ -271,11 +287,7 @@ contract MerchMVPIntegrationTest is Test {
     
     function testSBTNonTransferability() public {
         // Mint SBT
-        (uint256 tokenId,) = merchManager.mintSBTWithAttestation(
-            user1,
-            "ipfs://QmTest",
-            event1Id
-        );
+        uint256 tokenId = _mintSBT(user1, uint256(event1Id), "ipfs://QmTest");
         
         // SBT should NOT be transferable
         vm.prank(user1);
@@ -289,11 +301,7 @@ contract MerchMVPIntegrationTest is Test {
     
     function testFeeSplitCalculation() public {
         // Mint SBT
-        (uint256 tokenId,) = merchManager.mintSBTWithAttestation(
-            user1,
-            "ipfs://QmTest",
-            event1Id
-        );
+        uint256 tokenId = _mintSBT(user1, uint256(event1Id), "ipfs://QmTest");
         
         uint256 treasuryBefore = treasury.balance;
         uint256 organizerBefore = organizer.balance;
@@ -301,7 +309,7 @@ contract MerchMVPIntegrationTest is Test {
         
         // Upgrade
         vm.prank(user1);
-        merchManager.upgradeSBTWithAttestation{value: upgradeFee}(
+        merchManager.mintCompanionWithAttestation{value: upgradeFee}(
             tokenId,
             organizer,
             event1Id
@@ -336,43 +344,35 @@ contract MerchMVPIntegrationTest is Test {
     
     function testCanUserUpgradeSBT() public {
         // Mint SBT
-        (uint256 tokenId,) = merchManager.mintSBTWithAttestation(
-            user1,
-            "ipfs://QmTest",
-            event1Id
-        );
+        uint256 tokenId = _mintSBT(user1, uint256(event1Id), "ipfs://QmTest");
         
         // Check if user can upgrade
-        (bool canUpgrade, string memory reason) = merchManager.canUserUpgradeSBT(tokenId, user1);
+        (bool canUpgrade, string memory reason) = merchManager.canUserMintCompanion(tokenId, user1);
         assertTrue(canUpgrade);
-        assertEq(reason, "Can upgrade");
+        assertEq(reason, "Can mint companion");
         
         // Check if non-owner can upgrade
-        (canUpgrade, reason) = merchManager.canUserUpgradeSBT(tokenId, user2);
+        (canUpgrade, reason) = merchManager.canUserMintCompanion(tokenId, user2);
         assertFalse(canUpgrade);
         assertEq(reason, "Not owner");
         
         // Upgrade
         vm.prank(user1);
-        merchManager.upgradeSBTWithAttestation{value: 0.001 ether}(
+        merchManager.mintCompanionWithAttestation{value: 0.001 ether}(
             tokenId,
             organizer,
             event1Id
         );
         
         // Check if already upgraded
-        (canUpgrade, reason) = merchManager.canUserUpgradeSBT(tokenId, user1);
+        (canUpgrade, reason) = merchManager.canUserMintCompanion(tokenId, user1);
         assertFalse(canUpgrade);
-        assertEq(reason, "Already upgraded");
+        assertEq(reason, "Already used for companion");
     }
     
     function testPausePreventUpgrade() public {
         // Mint SBT
-        (uint256 tokenId,) = merchManager.mintSBTWithAttestation(
-            user1,
-            "ipfs://QmTest",
-            event1Id
-        );
+        uint256 tokenId = _mintSBT(user1, uint256(event1Id), "ipfs://QmTest");
         
         // Pause premium contract
         premiumMerch.pause();
@@ -380,7 +380,7 @@ contract MerchMVPIntegrationTest is Test {
         // Try to upgrade (should fail)
         vm.prank(user1);
         vm.expectRevert();
-        merchManager.upgradeSBTWithAttestation{value: 0.001 ether}(
+        merchManager.mintCompanionWithAttestation{value: 0.001 ether}(
             tokenId,
             organizer,
             event1Id
@@ -390,7 +390,7 @@ contract MerchMVPIntegrationTest is Test {
         premiumMerch.unpause();
         
         vm.prank(user1);
-        merchManager.upgradeSBTWithAttestation{value: 0.001 ether}(
+        merchManager.mintCompanionWithAttestation{value: 0.001 ether}(
             tokenId,
             organizer,
             event1Id

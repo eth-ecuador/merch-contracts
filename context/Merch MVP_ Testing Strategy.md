@@ -2,7 +2,7 @@
 
 This strategy focuses on validating the **low-friction UX** and the **monetization conversion loop** on the Base Sepolia testnet, ensuring the Basic Merch SBT is **retained** after upgrade.
 
-## **1\. Smart Contract Testing (Hardhat/Foundry)**
+## **1\. Smart Contract Testing (Foundry)**
 
 | Test Area | Key Scenario | Pass Condition |
 | :---- | :---- | :---- |
