@@ -3,16 +3,19 @@
   "chainId": 84532,
   "deployer": "0x648a3e5510f55B4995fA5A22cCD62e2586ACb901",
   "treasury": "0x648a3e5510f55B4995fA5A22cCD62e2586ACb901",
-  "timestamp": 1760977740,
+  "backendIssuer": "0x648a3e5510f55B4995fA5A22cCD62e2586ACb901",
+  "timestamp": 1761104444,
   "contracts": {
-    "basicMerch": "0x51FEb9273B01d96C3cff5Ded91521248AaAc587B",
-    "premiumMerch": "0xa3A7C33C21c6B347B220B174928609A7Ae74BD10",
-    "easIntegration": "0xBF4AD57ec927016ca5beBc9F23ba4162871B018D",
-    "merchManager": "0x3ddaEe7C8f655c46FB5827eBb8D21EE7194216a2"
+    "basicMerch": "0x5eEC061B0A4d5d2Be4aCF831DE73E27e39F442fF",
+    "premiumMerch": "0xd668020ed16f83B5E0f7E772D843A51972Dd25A9",
+    "easIntegration": "0x07446D2465E8390025dda9a53Dd3d43E6BA75eC6",
+    "merchManager": "0x900DB725439Cf512c2647d2B1d327dc9d1D85a6C"
   },
   "configuration": {
     "upgradeFee": "1000000000000000",
     "treasurySplit": 3750,
-    "organizerSplit": 6250
+    "organizerSplit": 6250,
+    "signatureBasedMinting": true,
+    "sbtRetention": true
   }
 }

@@ -10,13 +10,13 @@ import "@openzeppelin/contracts/utils/Strings.sol";
  * @title BasicMerch
  * @dev ERC-4973 Soul Bound Token (SBT) implementation for free tier attendance proof
  * @notice This contract handles non-transferable proof of attendance tokens
- * @notice Implements ERC-4973-like behavior by preventing transfers after minting
+ * @notice ✅ PUBLIC MINTING with signature verification from backend issuer
  */
 contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
     using Strings for uint256;
 
     // State variables
-    uint256 private _tokenIdCounter = 1; // Start from 1 to avoid issues with default mapping values
+    uint256 private _tokenIdCounter = 1;
     string private _baseTokenURI;
     
     // Token URI storage
@@ -26,8 +26,8 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
     address public backendIssuer;
     
     // Event tracking
-    mapping(address => mapping(uint256 => uint256)) public userEventToTokenId; // user => eventId => tokenId
-    mapping(uint256 => uint256) public tokenIdToEventId; // tokenId => eventId
+    mapping(address => mapping(uint256 => uint256)) public userEventToTokenId;
+    mapping(uint256 => uint256) public tokenIdToEventId;
     
     // Events
     event SBTMinted(address indexed to, uint256 indexed tokenId, uint256 indexed eventId, string tokenURI);
@@ -43,11 +43,12 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
     error TransferNotAllowed();
     error DuplicateEventMint();
     error InvalidEventId();
+    error BackendIssuerNotSet();
 
     constructor(string memory name, string memory symbol) ERC721(name, symbol) Ownable(msg.sender) {}
 
     /**
-     * @dev Verify signature from backend issuer
+     * @dev Verify signature from backend issuer using EIP-191 standard
      */
     function _verifySignature(
         address _to,
@@ -75,16 +76,12 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
         }
         
         address signer = ecrecover(ethSignedMessageHash, v, r, s);
-        return signer == backendIssuer;
+        return signer == backendIssuer && signer != address(0);
     }
 
     /**
-     * @dev Mint a new SBT to the specified address with signature verification
-     * @param _to The address to mint the SBT to
-     * @param _eventId The event ID for this attendance
-     * @param _tokenURI The metadata URI for the token
-     * @param _signature The signature from the backend issuer
-     * @notice Public function that requires valid signature from backend issuer
+     * @dev ✅ PUBLIC MINT - Anyone can call with valid signature from backend
+     * @notice Users pay their own gas, backend only provides signature (off-chain, free)
      */
     function mintSBT(
         address _to, 
@@ -99,14 +96,13 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
         if (_to == address(0)) revert InvalidAddress();
         if (_eventId == 0) revert InvalidEventId();
         if (bytes(_tokenURI).length == 0) revert EmptyTokenURI();
-        if (backendIssuer == address(0)) revert InvalidAddress();
+        if (backendIssuer == address(0)) revert BackendIssuerNotSet();
         
-        // Check for duplicate event minting
         if (userEventToTokenId[_to][_eventId] != 0) {
             revert DuplicateEventMint();
         }
         
-        // Verify signature
+        // ✅ CRITICAL: Verify signature
         if (!_verifySignature(_to, _eventId, _tokenURI, _signature)) {
             revert InvalidSignature();
         }
@@ -117,7 +113,6 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
         _safeMint(_to, tokenId);
         _setTokenURI(tokenId, _tokenURI);
         
-        // Store event tracking
         userEventToTokenId[_to][_eventId] = tokenId;
         tokenIdToEventId[tokenId] = _eventId;
 
@@ -125,23 +120,10 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
         return tokenId;
     }
 
-    /**
-     * @dev Get SBT token ID for a specific user and event
-     * @param _owner The owner address
-     * @param _eventId The event ID
-     * @return uint256 The token ID (0 if not found)
-     */
     function getSBTByEvent(address _owner, uint256 _eventId) external view returns (uint256) {
         return userEventToTokenId[_owner][_eventId];
     }
 
-    /**
-     * @dev Check if the spender is approved or owner of the token
-     * @param _spender The address to check
-     * @param _tokenId The token ID to check
-     * @return bool True if spender is approved or owner
-     * @notice Required for ERC-721 contract to perform burn on user's behalf
-     */
     function isApprovedOrOwner(address _spender, uint256 _tokenId) 
         public 
         view 
@@ -157,9 +139,6 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
                 getApproved(_tokenId) == _spender);
     }
 
-    /**
-     * @dev Override transfer functions to prevent transfers (SBT behavior)
-     */
     function _update(
         address to,
         uint256 tokenId,
@@ -167,71 +146,47 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
     ) internal virtual override returns (address) {
         address from = _ownerOf(tokenId);
         
-        // Allow minting (from == address(0))
         if (from == address(0)) {
             return super._update(to, tokenId, auth);
         }
         
-        // Revert all transfers (SBTs are permanent)
         revert TransferNotAllowed();
     }
 
-    /**
-     * @dev Set the base URI for token metadata
-     * @param baseURI The new base URI
-     */
     function setBaseURI(string memory baseURI) external onlyOwner {
         _baseTokenURI = baseURI;
         emit BaseURISet(baseURI);
     }
 
-    /**
-     * @dev Get the base URI for token metadata
-     * @return string The base URI
-     */
     function _baseURI() internal view override returns (string memory) {
         return _baseTokenURI;
     }
 
-    /**
-     * @dev Set token URI for a specific token
-     * @param tokenId The token ID
-     * @param _tokenURI The token URI
-     */
     function _setTokenURI(uint256 tokenId, string memory _tokenURI) internal {
         if (!_exists(tokenId)) revert TokenDoesNotExist();
         _tokenURIs[tokenId] = _tokenURI;
         emit TokenURISet(tokenId, _tokenURI);
     }
 
-    /**
-     * @dev Override tokenURI to return individual token URIs
-     * @param tokenId The token ID
-     * @return string The token URI
-     */
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         if (!_exists(tokenId)) revert TokenDoesNotExist();
         
         string memory _tokenURI = _tokenURIs[tokenId];
         string memory base = _baseURI();
         
-        // If there is no base URI, return the token URI
         if (bytes(base).length == 0) {
             return _tokenURI;
         }
         
-        // If both are set, return the specific token URI
         if (bytes(_tokenURI).length > 0) {
             return _tokenURI;
         }
         
-        // If only base URI is set, concatenate with token ID
         return string(abi.encodePacked(base, tokenId.toString()));
     }
 
     /**
-     * @dev Set the backend issuer address for signature verification
-     * @param _issuer The address of the backend issuer
+     * @dev ✅ Set backend issuer address - MUST match backend wallet
      */
     function setBackendIssuer(address _issuer) external onlyOwner {
         if (_issuer == address(0)) revert InvalidAddress();
@@ -239,28 +194,14 @@ contract BasicMerch is ERC721, Ownable, ReentrancyGuard {
         emit BackendIssuerSet(_issuer);
     }
 
-    /**
-     * @dev Get the current token counter
-     * @return uint256 The current token ID counter
-     */
     function getCurrentTokenId() external view returns (uint256) {
         return _tokenIdCounter;
     }
 
-    /**
-     * @dev Check if a token exists
-     * @param tokenId The token ID to check
-     * @return bool True if token exists
-     */
     function _exists(uint256 tokenId) internal view returns (bool) {
         return _ownerOf(tokenId) != address(0);
     }
 
-    /**
-     * @dev Get the event ID for a specific token
-     * @param _tokenId The token ID
-     * @return uint256 The event ID
-     */
     function getEventIdByToken(uint256 _tokenId) external view returns (uint256) {
         return tokenIdToEventId[_tokenId];
     }
