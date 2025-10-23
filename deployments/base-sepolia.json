@@ -4,12 +4,12 @@
   "deployer": "0x648a3e5510f55B4995fA5A22cCD62e2586ACb901",
   "treasury": "0x648a3e5510f55B4995fA5A22cCD62e2586ACb901",
   "backendIssuer": "0x648a3e5510f55B4995fA5A22cCD62e2586ACb901",
-  "timestamp": 1761104444,
+  "timestamp": 1761252678,
   "contracts": {
-    "basicMerch": "0x5eEC061B0A4d5d2Be4aCF831DE73E27e39F442fF",
-    "premiumMerch": "0xd668020ed16f83B5E0f7E772D843A51972Dd25A9",
-    "easIntegration": "0x07446D2465E8390025dda9a53Dd3d43E6BA75eC6",
-    "merchManager": "0x900DB725439Cf512c2647d2B1d327dc9d1D85a6C"
+    "basicMerch": "0xaD3d265112967c52a9BE48F4a61b89B48a5098F1",
+    "premiumMerch": "0x139894eB07f6cFDd10f36D1Af31EeB236C03443B",
+    "easIntegration": "0x985eCaBA2B222971fc018983004C226076fBf723",
+    "merchManager": "0xD71F654c7B9C15A54B2617262369fA219c15fe24"
   },
   "configuration": {
     "upgradeFee": "1000000000000000",
