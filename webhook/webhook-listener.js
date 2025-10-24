@@ -289,7 +289,7 @@ async function main() {
                         eventId: eventId,
                         eventName: name,
                         eventDescription: description,
-                        eventImage: imageUri,
+                        imageUri: imageUri,
                         quantity: Number(quantity)
                     },
                     {
