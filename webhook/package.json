@@ -1,0 +1,16 @@
+{
+  "name": "merch-webhook-listener",
+  "version": "1.0.0",
+  "main": "webhook-listener.js",
+  "scripts": {
+    "start": "node webhook-listener.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0",
+    "dotenv": "^16.4.0",
+    "axios": "^1.7.0"
+  }
+}

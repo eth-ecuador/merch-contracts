@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: merch-webhook-listener
+    env: node
+    buildCommand: npm install
+    startCommand: node webhook-listener.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BASE_SEPOLIA_RPC_URL
+        sync: false
+      - key: MERCH_MANAGER_ADDRESS
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: BACKEND_URL
+        value: https://merch-backend-ot7l.onrender.com
