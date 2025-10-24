@@ -287,9 +287,9 @@ async function main() {
                     `${BACKEND_URL}/api/createCodes`,
                     {
                         eventId: eventId,
-                        name: name,
-                        description: description,
-                        imageUri: imageUri,
+                        eventName: name,
+                        eventDescription: description,
+                        eventImage: imageUri,
                         quantity: Number(quantity)
                     },
                     {
