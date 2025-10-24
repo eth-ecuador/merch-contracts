@@ -1,5 +1,5 @@
 services:
-  - type: web
+  - type: worker
     name: merch-webhook-listener
     env: node
     buildCommand: npm install
